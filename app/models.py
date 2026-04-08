@@ -21,6 +21,12 @@ class SubmissionStatus(str, Enum):
     REVIEWED = "reviewed"
 
 
+class ParticipationStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -73,6 +79,7 @@ class Criterion(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("criterion_groups.id"))
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[str] = mapped_column(Text)
+    min_points: Mapped[float] = mapped_column(Float, default=0.0)
     max_points: Mapped[float] = mapped_column(Float, default=0.0)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -112,8 +119,43 @@ class ScoreEntry(Base):
     criterion_id: Mapped[int] = mapped_column(ForeignKey("criteria.id"))
     self_score: Mapped[float] = mapped_column(Float, default=0.0)
     advisor_score: Mapped[float] = mapped_column(Float, default=0.0)
+    evidence_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     evidence: Mapped[str] = mapped_column(Text, default="")
+    evidence_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
     advisor_feedback: Mapped[str] = mapped_column(Text, default="")
 
     submission: Mapped["Submission"] = relationship(back_populates="scores")
     criterion: Mapped["Criterion"] = relationship(back_populates="scores")
+
+
+class Event(Base):
+    __tablename__ = "events"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    semester_id: Mapped[int] = mapped_column(ForeignKey("semesters.id"))
+    criterion_id: Mapped[int] = mapped_column(ForeignKey("criteria.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    points: Mapped[float] = mapped_column(Float, default=0.0)
+    qr_code: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    semester: Mapped["Semester"] = relationship()
+    criterion: Mapped["Criterion"] = relationship()
+    participations: Mapped[list["EventParticipation"]] = relationship(back_populates="event", cascade="all, delete-orphan")
+
+
+class EventParticipation(Base):
+    __tablename__ = "event_participations"
+    __table_args__ = (UniqueConstraint("student_id", "event_id", name="uq_student_event_part"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    evidence_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status: Mapped[ParticipationStatus] = mapped_column(SqlEnum(ParticipationStatus), default=ParticipationStatus.PENDING)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    student: Mapped["User"] = relationship()
+    event: Mapped["Event"] = relationship(back_populates="participations")
