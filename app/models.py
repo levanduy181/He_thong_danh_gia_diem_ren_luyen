@@ -122,6 +122,7 @@ class ScoreEntry(Base):
     evidence_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     evidence: Mapped[str] = mapped_column(Text, default="")
     evidence_file: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    evidence_status: Mapped[str] = mapped_column(String(20), default="pending")
     advisor_feedback: Mapped[str] = mapped_column(Text, default="")
 
     submission: Mapped["Submission"] = relationship(back_populates="scores")

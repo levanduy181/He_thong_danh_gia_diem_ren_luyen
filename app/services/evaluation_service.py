@@ -127,12 +127,25 @@ def update_student_scores(session: Session, submission_id: int, score_payload: d
         payload = score_payload.get(score.criterion_id, {})
         max_points = score.criterion.max_points if score.criterion else 0
         min_points = score.criterion.min_points if score.criterion else 0
+        previous_evidence = score.evidence
+        previous_evidence_type = score.evidence_type or ""
+        previous_evidence_file = score.evidence_file or ""
         score.self_score = _clamp_score(float(payload.get("self_score", 0) or 0), min_points, max_points)
         score.evidence = str(payload.get("evidence", "") or "").strip()
         if "evidence_type" in payload:
             score.evidence_type = str(payload["evidence_type"]).strip()
         if "evidence_file" in payload:
             score.evidence_file = str(payload["evidence_file"]).strip()
+        if "evidence_status" in payload:
+            score.evidence_status = str(payload["evidence_status"]).strip() or "pending"
+        elif (
+            score.evidence != previous_evidence
+            or (score.evidence_type or "") != previous_evidence_type
+            or (score.evidence_file or "") != previous_evidence_file
+        ):
+            score.evidence_status = "pending"
+            if not score.evidence:
+                score.advisor_feedback = ""
         if score.advisor_score == 0:
             score.advisor_score = score.self_score
 
@@ -162,6 +175,91 @@ def update_advisor_scores(session: Session, submission_id: int, score_payload: d
     submission.reviewed_at = datetime.utcnow()
     submission.updated_at = datetime.utcnow()
     return submission
+
+
+def get_submissions_for_semester(session: Session, semester_id: int) -> list[Submission]:
+    return list(
+        session.scalars(
+            select(Submission)
+            .where(Submission.semester_id == semester_id)
+            .options(
+                joinedload(Submission.student),
+                joinedload(Submission.semester),
+                joinedload(Submission.scores).joinedload(ScoreEntry.criterion).joinedload(Criterion.group),
+            )
+            .order_by(desc(Submission.updated_at))
+        ).unique()
+    )
+
+
+def review_evidence(session: Session, submission_id: int, criterion_id: int, approved: bool, feedback: str = "") -> Submission:
+    submission = load_submission(session, submission_id)
+    if not submission:
+        raise ValueError("Khong tim thay phieu danh gia.")
+
+    score = next((item for item in submission.scores if item.criterion_id == criterion_id), None)
+    if not score:
+        raise ValueError("Khong tim thay minh chung.")
+
+    score.evidence_status = "approved" if approved else "rejected"
+    score.advisor_feedback = feedback.strip() or ("Đã duyệt minh chứng." if approved else "Minh chứng chưa hợp lệ.")
+    score.advisor_score = score.self_score if approved else 0.0
+    submission.advisor_total = round(sum(item.advisor_score for item in submission.scores), 2)
+    submission.updated_at = datetime.utcnow()
+    if submission.status == SubmissionStatus.DRAFT:
+        submission.status = SubmissionStatus.SUBMITTED
+    return submission
+
+
+def admin_update_submission(
+    session: Session,
+    submission_id: int,
+    score_payload: dict[int, dict[str, str | float]],
+    student_note: str,
+    advisor_note: str,
+    status: str,
+    submitted_at: datetime | None,
+    reviewed_at: datetime | None,
+) -> Submission:
+    submission = load_submission(session, submission_id)
+    if not submission:
+        raise ValueError("Khong tim thay phieu danh gia.")
+
+    for score in submission.scores:
+        payload = score_payload.get(score.criterion_id, {})
+        max_points = score.criterion.max_points if score.criterion else 0
+        min_points = score.criterion.min_points if score.criterion else 0
+        score.self_score = _clamp_score(float(payload.get("self_score", score.self_score) or 0), min_points, max_points)
+        score.advisor_score = _clamp_score(float(payload.get("advisor_score", score.advisor_score) or 0), min_points, max_points)
+        score.evidence = str(payload.get("evidence", score.evidence) or "").strip()
+        score.evidence_type = str(payload.get("evidence_type", score.evidence_type or "") or "").strip()
+        score.evidence_file = str(payload.get("evidence_file", score.evidence_file or "") or "").strip()
+        score.evidence_status = str(payload.get("evidence_status", score.evidence_status or "pending") or "pending").strip()
+        score.advisor_feedback = str(payload.get("advisor_feedback", score.advisor_feedback) or "").strip()
+
+    submission.self_total = round(sum(item.self_score for item in submission.scores), 2)
+    submission.advisor_total = round(sum(item.advisor_score for item in submission.scores), 2)
+    submission.student_note = student_note.strip()
+    submission.advisor_note = advisor_note.strip()
+    submission.status = SubmissionStatus(status)
+    submission.submitted_at = submitted_at
+    submission.reviewed_at = reviewed_at
+    submission.updated_at = datetime.utcnow()
+    return submission
+
+
+def admin_update_semester(session: Session, semester_id: int, start_date, end_date, is_active: bool) -> Semester:
+    semester = session.get(Semester, semester_id)
+    if not semester:
+        raise ValueError("Khong tim thay hoc ky.")
+
+    semester.start_date = start_date
+    semester.end_date = end_date
+    if is_active:
+        set_active_semester(session, semester_id)
+    else:
+        semester.is_active = False
+    return semester
 
 
 def group_totals(submission: Submission) -> list[dict]:
@@ -261,4 +359,3 @@ def approve_event_participation(session: Session, participation_id: int) -> Even
     submission.advisor_total = round(sum(item.advisor_score for item in submission.scores), 2)
     session.flush()
     return participation
-

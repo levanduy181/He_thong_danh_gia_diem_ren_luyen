@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from app.db import get_session
 from app.services.evaluation_service import get_active_semester, get_pending_submissions, get_semesters, load_submission, serialize_submission
@@ -35,3 +35,9 @@ def api_submission(submission_id: int) -> dict:
         if not submission:
             raise HTTPException(status_code=404, detail="Khong tim thay phieu danh gia")
         return serialize_submission(submission)
+
+
+@router.post("/logout")
+async def api_logout(request: Request) -> dict[str, str]:
+    request.session.clear()
+    return {"status": "ok"}

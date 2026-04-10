@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta
+import json
+import base64
+import mimetypes
+from pathlib import Path
+from datetime import date, datetime, time, timedelta
+
+from sqlalchemy import inspect, text
 
 from nicegui import app, ui
 
@@ -9,24 +15,44 @@ from app.config import DATA_DIR, STORAGE_SECRET
 from app.db import Base, engine, get_session
 from app.models import EventParticipation, ScoreEntry, Semester, Submission, SubmissionStatus, User, UserRole
 from app.services.evaluation_service import (
+    admin_update_semester,
+    admin_update_submission,
     authenticate,
+    get_dashboard_stats,
     get_active_events,
     get_active_semester,
     get_criteria_tree,
     get_or_create_submission,
     get_semesters,
+    get_submissions_for_semester,
     get_student_event_participations,
     get_user_by_id,
     list_students,
     load_submission,
+    review_evidence,
     submit_event_participation,
+    update_advisor_scores,
     update_student_scores,
 )
 from app.services.seed import seed_default_data
 
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+UPLOADS_DIR = DATA_DIR / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 Base.metadata.create_all(engine)
+
+
+def ensure_runtime_schema() -> None:
+    inspector = inspect(engine)
+    score_columns = {column["name"] for column in inspector.get_columns("score_entries")}
+    if "evidence_status" not in score_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE score_entries ADD COLUMN evidence_status VARCHAR(20) DEFAULT 'pending'"))
+            connection.execute(text("UPDATE score_entries SET evidence_status = 'approved' WHERE TRIM(COALESCE(evidence, '')) <> ''"))
+
+
+ensure_runtime_schema()
 with get_session() as session:
     seed_default_data(session)
 
@@ -214,16 +240,53 @@ def current_user() -> User | None:
         return get_user_by_id(session, app.storage.user.get("user_id"))
 
 
+def redirect(url: str) -> None:
+    ui.run_javascript(f"window.location.href = {json.dumps(url)}")
+
+
+def redirect_with_tab_auth(url: str, *, set_tab_auth: bool | None = None) -> None:
+    statements: list[str] = []
+    if set_tab_auth is True:
+        statements.append("sessionStorage.setItem('ptit_auth', '1')")
+    elif set_tab_auth is False:
+        statements.append("sessionStorage.removeItem('ptit_auth')")
+    statements.append(f"window.location.href = {json.dumps(url)}")
+    ui.run_javascript(";".join(statements))
+
+
+def get_home_path_for_user(user: User, session) -> str:
+    if user.role == UserRole.STUDENT:
+        semesters = get_semesters(session)
+        selected_semester_id = get_default_semester_id(session, semesters)
+        app.storage.user["selected_semester_id"] = selected_semester_id
+        return f"/score?semester={selected_semester_id}"
+    return "/portal"
+
+
 def require_login() -> bool:
     if not app.storage.user.get("user_id"):
-        ui.navigate.to("/login")
+        redirect("/login")
         return False
     return True
 
 
 def logout() -> None:
     app.storage.user.clear()
-    ui.navigate.to("/login")
+    redirect_with_tab_auth("/login", set_tab_auth=False)
+
+
+def inject_protected_page_guard() -> None:
+    ui.add_body_html(
+        """
+        <script>
+        (function () {
+          if (sessionStorage.getItem('ptit_auth') === '1') return;
+          fetch('/api/logout', {method: 'POST', credentials: 'same-origin', keepalive: true})
+            .finally(function () { window.location.href = '/login'; });
+        })();
+        </script>
+        """
+    )
 
 
 def sync_selected_semester_from_request(semesters: list[Semester]) -> int | None:
@@ -286,16 +349,16 @@ def load_student_context() -> dict:
 def navigate_with_semester(path: str, semester_id: int) -> None:
     app.storage.user["selected_semester_id"] = semester_id
     timestamp = int(datetime.utcnow().timestamp() * 1000)
-    ui.run_javascript(f"window.location.href = '{path}?semester={semester_id}&refresh={timestamp}'")
+    redirect(f"{path}?semester={semester_id}&refresh={timestamp}")
 
 
 def refresh_page(path: str) -> None:
     semester_id = app.storage.user.get("selected_semester_id")
     timestamp = int(datetime.utcnow().timestamp() * 1000)
     if semester_id:
-        ui.run_javascript(f"window.location.href = '{path}?semester={semester_id}&refresh={timestamp}'")
+        redirect(f"{path}?semester={semester_id}&refresh={timestamp}")
     else:
-        ui.run_javascript(f"window.location.href = '{path}?refresh={timestamp}'")
+        redirect(f"{path}?refresh={timestamp}")
 
 
 def format_dt(value: datetime) -> str:
@@ -311,8 +374,8 @@ def semester_stages(semester: Semester) -> list[tuple[str, str, str]]:
     labels = [
         "Cập nhật, duyệt minh chứng",
         "Sinh viên đánh giá",
-        "Ban cán sự đánh giá",
-        "Chủ nhiệm lớp xác nhận",
+        "Cố vấn học tập duyệt",
+        "Quản trị viên xác nhận",
     ]
     items = []
     for idx, point in enumerate(points):
@@ -358,6 +421,17 @@ def render_topbar(student: User) -> None:
             ui.button("Đăng xuất", icon="logout", on_click=logout).classes("bg-red-600 text-white rounded-lg")
 
 
+def render_staff_topbar(user: User, title: str) -> None:
+    with ui.element("div").classes("s-card sticky top-0 z-20 flex items-center justify-between px-6 py-3"):
+        ui.label(title).classes("text-lg font-semibold text-slate-700")
+        with ui.row().classes("items-center gap-5"):
+            ui.label(f"Vai trò: {'Quản trị viên' if user.role == UserRole.ADMIN else 'Cố vấn học tập'}").classes("text-sm font-semibold text-slate-500")
+            with ui.row().classes("items-center gap-3"):
+                ui.avatar(vi(user.full_name)[:1].upper(), color="grey-4", text_color="white").classes("font-bold")
+                ui.label(vi(user.full_name)).classes("text-lg text-slate-700")
+            ui.button("Đăng xuất", icon="logout", on_click=logout).classes("bg-red-600 text-white rounded-lg")
+
+
 def render_sidebar(active_leaf: str) -> None:
     with ui.column().classes("w-full gap-3"):
         with ui.row().classes("items-center gap-3 px-5 py-4"):
@@ -393,9 +467,10 @@ def render_shell(active_leaf: str, content_renderer) -> None:
         context = load_student_context()
     except ValueError as error:
         ui.notify(str(error), color="negative")
-        ui.navigate.to("/login")
+        redirect("/portal")
         return
     ui.page_title("S-Link PTIT Conduct Evaluation")
+    inject_protected_page_guard()
     with ui.element("div").classes("min-h-screen w-full"):
         with ui.row().classes("w-full items-start flex-nowrap"):
             with ui.column().classes("s-sidebar min-h-screen w-[280px] shrink-0"):
@@ -404,6 +479,310 @@ def render_shell(active_leaf: str, content_renderer) -> None:
                 render_topbar(context["student"])
                 with ui.column().classes("w-full gap-4 p-4 md:p-6"):
                     content_renderer(context)
+
+
+def refresh_portal() -> None:
+    redirect(f"/portal?refresh={int(datetime.utcnow().timestamp() * 1000)}")
+
+
+def set_staff_semester(semester_id: int) -> None:
+    app.storage.user["staff_semester_id"] = semester_id
+    app.storage.user["staff_submission_id"] = None
+    refresh_portal()
+
+
+def set_staff_submission(submission_id: int) -> None:
+    app.storage.user["staff_submission_id"] = submission_id
+    refresh_portal()
+
+
+def get_staff_selected_semester(semesters: list[Semester]) -> Semester:
+    stored = app.storage.user.get("staff_semester_id")
+    valid_ids = {semester.id for semester in semesters}
+    if stored in valid_ids:
+        return next(semester for semester in semesters if semester.id == stored)
+    selected = next((semester for semester in semesters if semester.is_active), semesters[0])
+    app.storage.user["staff_semester_id"] = selected.id
+    return selected
+
+
+def parse_date_input(value: str) -> date:
+    return datetime.strptime(value, "%Y-%m-%d").date()
+
+
+def parse_datetime_input(value: str) -> datetime | None:
+    if not value:
+        return None
+    return datetime.strptime(value, "%Y-%m-%dT%H:%M")
+
+
+def format_datetime_input(value: datetime | None) -> str:
+    return value.strftime("%Y-%m-%dT%H:%M") if value else ""
+
+
+def render_advisor_evidence_panel(submission: Submission | None) -> None:
+    with ui.card().classes("s-card rounded-[12px] p-5 gap-4 shadow-none"):
+        ui.label("Duyệt minh chứng").classes("text-xl font-semibold")
+        if not submission:
+            render_empty_box("Chưa có phiếu nào", "Học kỳ này chưa có phiếu để cố vấn học tập xử lý.")
+            return
+        evidence_scores = [score for score in submission.scores if score.evidence]
+        if not evidence_scores:
+            render_empty_box("Chưa có minh chứng", "Sinh viên chưa nộp minh chứng trong phiếu đã chọn.")
+            return
+        ui.label(f"Sinh viên: {vi(submission.student.full_name)} - {submission.student.student_code}").classes("text-sm text-slate-500")
+        for score in evidence_scores:
+            status_text, status_color = evidence_status_meta(score.evidence_status)
+            with ui.card().classes("rounded-[10px] border border-slate-200 p-4 gap-3 shadow-none"):
+                with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):
+                    ui.label(vi(score.criterion.title)).classes("font-semibold")
+                    ui.badge(status_text, color=status_color)
+                ui.label(f"Loại minh chứng: {score.evidence_type or 'Khác'}").classes("text-sm text-slate-500")
+                ui.label(score.evidence).classes("text-[15px]")
+                if score.evidence_file:
+                    ui.label(f"Tệp: {display_file_name(score.evidence_file)}").classes("text-sm text-blue-600")
+                    image_uri = image_data_uri(score.evidence_file)
+                    if image_uri:
+                        with ui.dialog() as preview_dialog, ui.card().classes("s-card max-w-[90vw] rounded-[12px] p-4 gap-3 shadow-none"):
+                            ui.label("Xem ảnh minh chứng").classes("text-xl font-semibold")
+                            ui.image(image_uri).classes("max-h-[80vh] max-w-[80vw] rounded-lg object-contain")
+                            ui.button("Đóng", on_click=preview_dialog.close).props("flat").classes("self-end")
+                        ui.image(image_uri).classes("max-h-[220px] max-w-full cursor-pointer rounded-lg border border-slate-200 object-contain").on(
+                            "click",
+                            lambda dialog=preview_dialog: dialog.open(),
+                        )
+                        ui.button("Xem ảnh lớn", icon="open_in_full", on_click=preview_dialog.open).props("flat").classes("self-start text-blue-600")
+                    else:
+                        ui.label("Không tìm thấy file ảnh trên máy chủ. Hãy yêu cầu sinh viên tải lại minh chứng này.").classes(
+                            "text-sm font-medium text-amber-700"
+                        )
+                feedback = ui.textarea("Nhận xét của cố vấn học tập", value=score.advisor_feedback or "").props("outlined autogrow").classes("w-full")
+
+                def decide(approved: bool, sid=submission.id, cid=score.criterion_id, feedback_input=feedback) -> None:
+                    with get_session() as session:
+                        review_evidence(session, sid, cid, approved, feedback_input.value or "")
+                    ui.notify("Đã cập nhật kết quả duyệt minh chứng", color="positive")
+                    refresh_portal()
+
+                with ui.row().classes("gap-3"):
+                    ui.button("Duyệt minh chứng", icon="check_circle", on_click=lambda sid=submission.id, cid=score.criterion_id, feedback_input=feedback: decide(True, sid, cid, feedback_input)).classes("bg-green-600 text-white rounded-lg")
+                    ui.button("Không duyệt", icon="cancel", on_click=lambda sid=submission.id, cid=score.criterion_id, feedback_input=feedback: decide(False, sid, cid, feedback_input)).classes("bg-red-600 text-white rounded-lg")
+
+
+def render_advisor_score_panel(submission: Submission | None) -> None:
+    with ui.card().classes("s-card rounded-[12px] p-5 gap-4 shadow-none"):
+        ui.label("Cố vấn học tập duyệt phiếu").classes("text-xl font-semibold")
+        if not submission:
+            render_empty_box("Chưa có phiếu nào", "Không có phiếu để chấm điểm trong học kỳ đã chọn.")
+            return
+        if submission.status == SubmissionStatus.DRAFT:
+            render_empty_box("Sinh viên chưa nộp phiếu", "Chỉ những phiếu đã gửi mới được hiển thị để cố vấn học tập duyệt.")
+            return
+        inputs: dict[int, dict[str, object]] = {}
+        for score in submission.scores:
+            with ui.row().classes("w-full items-start gap-3 rounded-[10px] border border-slate-200 px-4 py-3"):
+                ui.label(vi(score.criterion.title)).classes("flex-1 text-[15px] leading-7")
+                ui.number(value=score.self_score, format="%.1f").props("outlined dense readonly").classes("w-[140px]")
+                advisor_score = ui.number(value=score.advisor_score, min=score.criterion.min_points, max=score.criterion.max_points, step=0.5, format="%.1f").props("outlined dense").classes("w-[140px]")
+                feedback = ui.input("Nhận xét", value=score.advisor_feedback or "").props("outlined dense").classes("w-[260px]")
+                inputs[score.criterion_id] = {"advisor_score": advisor_score, "advisor_feedback": feedback}
+        advisor_note = ui.textarea("Nhận xét chung của cố vấn học tập", value=submission.advisor_note or "").props("outlined autogrow").classes("w-full")
+
+        def approve_submission() -> None:
+            payload = {
+                criterion_id: {
+                    "advisor_score": fields["advisor_score"].value or 0,
+                    "advisor_feedback": fields["advisor_feedback"].value or "",
+                }
+                for criterion_id, fields in inputs.items()
+            }
+            with get_session() as session:
+                update_advisor_scores(session, submission.id, payload, advisor_note.value or "")
+            ui.notify("Đã duyệt phiếu điểm rèn luyện", color="positive")
+            refresh_portal()
+
+        ui.button("Duyệt phiếu điểm", icon="task_alt", on_click=approve_submission).classes("bg-red-600 text-white rounded-lg self-start")
+
+
+def render_admin_submission_panel(submission: Submission | None) -> None:
+    with ui.card().classes("s-card rounded-[12px] p-5 gap-4 shadow-none"):
+        ui.label("Admin sửa toàn quyền phiếu điểm").classes("text-xl font-semibold")
+        if not submission:
+            render_empty_box("Chưa có phiếu nào", "Không có phiếu nào để quản trị viên chỉnh sửa.")
+            return
+        inputs: dict[int, dict[str, object]] = {}
+        for score in submission.scores:
+            with ui.card().classes("rounded-[10px] border border-slate-200 p-4 gap-3 shadow-none"):
+                ui.label(vi(score.criterion.title)).classes("font-semibold")
+                with ui.row().classes("w-full gap-3 flex-wrap"):
+                    self_score = ui.number("Điểm sinh viên", value=score.self_score, min=score.criterion.min_points, max=score.criterion.max_points, step=0.5, format="%.1f").props("outlined dense").classes("w-[180px]")
+                    advisor_score = ui.number("Điểm cố vấn", value=score.advisor_score, min=score.criterion.min_points, max=score.criterion.max_points, step=0.5, format="%.1f").props("outlined dense").classes("w-[180px]")
+                    evidence_status = ui.select({"pending": "Chờ duyệt", "approved": "Đã duyệt", "rejected": "Không duyệt"}, value=score.evidence_status or "pending", label="Trạng thái minh chứng").props("outlined dense").classes("w-[220px]")
+                evidence = ui.textarea("Minh chứng", value=score.evidence or "").props("outlined autogrow").classes("w-full")
+                feedback = ui.input("Nhận xét cố vấn", value=score.advisor_feedback or "").props("outlined dense").classes("w-full")
+                inputs[score.criterion_id] = {
+                    "self_score": self_score,
+                    "advisor_score": advisor_score,
+                    "evidence_status": evidence_status,
+                    "evidence": evidence,
+                    "advisor_feedback": feedback,
+                    "evidence_type": score.evidence_type or "",
+                    "evidence_file": score.evidence_file or "",
+                }
+        student_note = ui.textarea("Nhận xét của sinh viên", value=submission.student_note or "").props("outlined autogrow").classes("w-full")
+        advisor_note = ui.textarea("Nhận xét của admin", value=submission.advisor_note or "").props("outlined autogrow").classes("w-full")
+        with ui.row().classes("w-full gap-3 flex-wrap"):
+            status_input = ui.select(
+                {"draft": "Nháp", "submitted": "Đã gửi", "reviewed": "Đã duyệt"},
+                value=submission.status.value,
+                label="Trạng thái phiếu",
+            ).props("outlined dense").classes("w-[180px]")
+            submitted_at = ui.input("Thời điểm gửi", value=format_datetime_input(submission.submitted_at)).props("outlined dense type=datetime-local").classes("w-[220px]")
+            reviewed_at = ui.input("Thời điểm duyệt", value=format_datetime_input(submission.reviewed_at)).props("outlined dense type=datetime-local").classes("w-[220px]")
+
+        def save_admin_submission() -> None:
+            payload = {
+                criterion_id: {
+                    "self_score": fields["self_score"].value or 0,
+                    "advisor_score": fields["advisor_score"].value or 0,
+                    "evidence_status": fields["evidence_status"].value or "pending",
+                    "evidence": fields["evidence"].value or "",
+                    "advisor_feedback": fields["advisor_feedback"].value or "",
+                    "evidence_type": fields["evidence_type"],
+                    "evidence_file": fields["evidence_file"],
+                }
+                for criterion_id, fields in inputs.items()
+            }
+            with get_session() as session:
+                admin_update_submission(
+                    session,
+                    submission.id,
+                    payload,
+                    student_note.value or "",
+                    advisor_note.value or "",
+                    status_input.value or "draft",
+                    parse_datetime_input(submitted_at.value or ""),
+                    parse_datetime_input(reviewed_at.value or ""),
+                )
+            ui.notify("Admin đã cập nhật phiếu điểm rèn luyện", color="positive")
+            refresh_portal()
+
+        ui.button("Lưu chỉnh sửa toàn quyền", icon="admin_panel_settings", on_click=save_admin_submission).classes("bg-slate-800 text-white rounded-lg self-start")
+
+
+def render_admin_semester_panel(semesters: list[Semester]) -> None:
+    with ui.card().classes("s-card rounded-[12px] p-5 gap-4 shadow-none"):
+        ui.label("Admin chỉnh thời gian nộp điểm rèn luyện").classes("text-xl font-semibold")
+        for semester in semesters:
+            with ui.card().classes("rounded-[10px] border border-slate-200 p-4 gap-3 shadow-none"):
+                ui.label(vi(semester.name)).classes("font-semibold")
+                with ui.row().classes("w-full gap-3 flex-wrap items-end"):
+                    start_input = ui.input("Ngày bắt đầu", value=semester.start_date.isoformat()).props("outlined dense type=date").classes("w-[200px]")
+                    end_input = ui.input("Ngày kết thúc", value=semester.end_date.isoformat()).props("outlined dense type=date").classes("w-[200px]")
+                    active_switch = ui.switch("Đang hoạt động", value=semester.is_active)
+
+                def save_semester(sem_id=semester.id, start_field=start_input, end_field=end_input, active_field=active_switch) -> None:
+                    with get_session() as session:
+                        admin_update_semester(
+                            session,
+                            sem_id,
+                            parse_date_input(start_field.value or ""),
+                            parse_date_input(end_field.value or ""),
+                            bool(active_field.value),
+                        )
+                    ui.notify("Đã cập nhật thời gian học kỳ", color="positive")
+                    refresh_portal()
+
+                ui.button("Lưu thời gian học kỳ", icon="schedule", on_click=save_semester).classes("bg-blue-600 text-white rounded-lg self-start")
+
+
+def render_staff_portal() -> None:
+    with get_session() as session:
+        user = get_user_by_id(session, app.storage.user.get("user_id"))
+        if not user or user.role == UserRole.STUDENT:
+            redirect("/login")
+            return
+        stats = get_dashboard_stats(session)
+        semesters = get_semesters(session)
+        students = list_students(session)
+        selected_semester = get_staff_selected_semester(semesters)
+        submissions = get_submissions_for_semester(session, selected_semester.id)
+        submission_options = {
+            submission.id: f"{submission.student.student_code} - {vi(submission.student.full_name)}"
+            for submission in submissions
+            if submission.student
+        }
+        selected_submission_id = app.storage.user.get("staff_submission_id")
+        if selected_submission_id not in submission_options:
+            selected_submission_id = next(iter(submission_options), None)
+            app.storage.user["staff_submission_id"] = selected_submission_id
+        selected_submission = load_submission(session, selected_submission_id) if selected_submission_id else None
+
+    title = "Cổng quản trị điểm rèn luyện" if user.role == UserRole.ADMIN else "Cổng cố vấn học tập"
+    ui.page_title(title)
+    inject_protected_page_guard()
+    with ui.element("div").classes("min-h-screen w-full"):
+        render_staff_topbar(user, title)
+        with ui.column().classes("w-full gap-4 p-4 md:p-6"):
+            with ui.row().classes("w-full items-center justify-between gap-4 flex-wrap"):
+                ui.label("Tổng quan hệ thống").classes("page-title")
+                ui.select(
+                    {semester.id: vi(semester.name) for semester in semesters},
+                    value=selected_semester.id,
+                    on_change=lambda event: set_staff_semester(int(event.value)),
+                    label="Học kỳ làm việc",
+                ).props("outlined dense").classes("min-w-[320px] bg-white")
+            with ui.row().classes("w-full gap-4 flex-wrap"):
+                for label, value in [
+                    ("Sinh viên", stats["students"]),
+                    ("Học kỳ hoạt động", stats["active_semesters"]),
+                    ("Phiếu đã gửi", stats["submitted_forms"]),
+                    ("Phiếu đã duyệt", stats["reviewed_forms"]),
+                ]:
+                    with ui.card().classes("s-card min-w-[220px] flex-1 rounded-[12px] p-5 gap-2 shadow-none"):
+                        ui.label(label).classes("text-sm font-semibold text-slate-500")
+                        ui.label(str(value)).classes("text-4xl font-extrabold text-slate-800")
+            with ui.row().classes("w-full gap-4 flex-wrap items-start"):
+                with ui.card().classes("s-card flex-1 min-w-[320px] rounded-[12px] p-5 gap-3 shadow-none"):
+                    ui.label("Danh sách học kỳ").classes("text-xl font-semibold")
+                    for semester in semesters:
+                        status = "Đang hoạt động" if semester.is_active else "Đã khóa"
+                        with ui.row().classes("w-full items-center justify-between rounded-lg border border-slate-200 px-4 py-3"):
+                            with ui.column().classes("gap-1"):
+                                ui.label(vi(semester.name)).classes("font-semibold")
+                                ui.label(f"{semester.start_date:%d/%m/%Y} - {semester.end_date:%d/%m/%Y}").classes("text-sm text-slate-500")
+                            ui.label(status).classes("text-sm font-semibold text-slate-500")
+                with ui.card().classes("s-card flex-[1.4] min-w-[420px] rounded-[12px] p-5 gap-3 shadow-none"):
+                    ui.label("Chọn phiếu sinh viên").classes("text-xl font-semibold")
+                    ui.select(
+                        submission_options or {0: "Không có phiếu"},
+                        value=selected_submission_id or 0,
+                        on_change=lambda event: set_staff_submission(int(event.value)) if int(event.value) else None,
+                        label="Phiếu cần xử lý",
+                    ).props("outlined dense").classes("w-full")
+                    if selected_submission:
+                        ui.label(f"Sinh viên: {vi(selected_submission.student.full_name)}").classes("font-semibold")
+                        ui.label(f"Mã sinh viên: {selected_submission.student.student_code}").classes("text-sm text-slate-500")
+                        ui.label(f"Trạng thái phiếu: {selected_submission.status.value}").classes("text-sm text-slate-500")
+                    else:
+                        ui.label("Học kỳ này chưa có phiếu để xử lý.").classes("text-sm text-slate-500")
+
+            with ui.tabs().classes("w-full") as tabs:
+                evidence_tab = ui.tab("Duyệt minh chứng")
+                advisor_tab = ui.tab("Duyệt phiếu")
+                if user.role == UserRole.ADMIN:
+                    admin_submission_tab = ui.tab("Sửa điểm toàn quyền")
+                    semester_tab = ui.tab("Sửa thời gian học kỳ")
+            with ui.tab_panels(tabs, value=evidence_tab).classes("w-full bg-transparent"):
+                with ui.tab_panel(evidence_tab).classes("px-0"):
+                    render_advisor_evidence_panel(selected_submission)
+                with ui.tab_panel(advisor_tab).classes("px-0"):
+                    render_advisor_score_panel(selected_submission)
+                if user.role == UserRole.ADMIN:
+                    with ui.tab_panel(admin_submission_tab).classes("px-0"):
+                        render_admin_submission_panel(selected_submission)
+                    with ui.tab_panel(semester_tab).classes("px-0"):
+                        render_admin_semester_panel(semesters)
 
 
 def get_criterion_bucket_map(submission: Submission) -> dict[int, int]:
@@ -423,10 +802,59 @@ def build_submission_payload(submission: Submission, overrides: dict[int, dict[s
             "evidence": score.evidence,
             "evidence_type": score.evidence_type or "",
             "evidence_file": score.evidence_file or "",
+            "evidence_status": score.evidence_status or "pending",
+            "advisor_feedback": score.advisor_feedback or "",
         }
     for criterion_id, data in overrides.items():
         payload[criterion_id].update(data)
     return payload
+
+
+def evidence_status_meta(status: str | None) -> tuple[str, str]:
+    mapping = {
+        "approved": ("Đã duyệt", "positive"),
+        "rejected": ("Không duyệt", "negative"),
+        "pending": ("Chờ duyệt", "warning"),
+    }
+    return mapping.get(status or "pending", ("Chờ duyệt", "warning"))
+
+
+def display_file_name(file_ref: str | None) -> str:
+    if not file_ref:
+        return ""
+    return Path(file_ref).name
+
+
+def resolve_evidence_path(file_ref: str | None) -> Path | None:
+    if not file_ref:
+        return None
+    direct = Path(file_ref)
+    if direct.exists() and direct.is_file():
+        return direct
+    fallback = UPLOADS_DIR / direct.name
+    if fallback.exists() and fallback.is_file():
+        return fallback
+    return None
+
+
+def save_uploaded_file(event) -> str:
+    safe_name = Path(event.name).name
+    unique_name = f"{int(datetime.utcnow().timestamp() * 1000)}_{safe_name}"
+    target = UPLOADS_DIR / unique_name
+    with target.open("wb") as file:
+        file.write(event.content.read())
+    return str(target)
+
+
+def image_data_uri(file_ref: str | None) -> str | None:
+    path = resolve_evidence_path(file_ref)
+    if not path:
+        return None
+    mime_type, _ = mimetypes.guess_type(path.name)
+    if not mime_type or not mime_type.startswith("image/"):
+        return None
+    encoded = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
 
 
 def delete_evidence_entry(submission_id: int, criterion_id: int) -> None:
@@ -441,6 +869,8 @@ def delete_evidence_entry(submission_id: int, criterion_id: int) -> None:
                         "evidence": "",
                         "evidence_type": "",
                         "evidence_file": "",
+                        "evidence_status": "pending",
+                        "advisor_feedback": "",
                     }
                 },
             )
@@ -460,7 +890,7 @@ def open_evidence_dialog(submission: Submission, criterion_id: int | None = None
     reverse_map = reverse_bucket_map(submission)
     selected_score = next((score for score in submission.scores if score.criterion_id == criterion_id), None)
     selected_bucket = reverse_map.get(criterion_id or 0, 1)
-    uploaded_file_name = {"name": selected_score.evidence_file if selected_score and selected_score.evidence_file else ""}
+    uploaded_file_ref = {"path": selected_score.evidence_file if selected_score and selected_score.evidence_file else ""}
 
     with ui.dialog() as dialog, ui.card().classes("s-card min-w-[700px] rounded-[12px] p-6 gap-4 shadow-none"):
         ui.label("Cập nhật minh chứng").classes("page-title")
@@ -477,15 +907,15 @@ def open_evidence_dialog(submission: Submission, criterion_id: int | None = None
         ).props("outlined dense").classes("w-full")
         evidence_input = ui.textarea("Nội dung minh chứng", value=selected_score.evidence if selected_score else "").props("outlined autogrow").classes("w-full")
         ui.label("Tải lên ảnh hoặc tệp chứng minh (nếu có):").classes("text-slate-600 text-sm mt-2")
-        file_hint = ui.label(f"Tệp hiện tại: {uploaded_file_name['name']}").classes(
+        file_hint = ui.label(f"Tệp hiện tại: {display_file_name(uploaded_file_ref['path'])}").classes(
             "text-sm font-medium text-blue-600"
         )
-        if not uploaded_file_name["name"]:
+        if not uploaded_file_ref["path"]:
             file_hint.set_visibility(False)
 
         def handle_upload(event):
-            uploaded_file_name["name"] = event.name
-            file_hint.set_text(f"Tệp hiện tại: {event.name}")
+            uploaded_file_ref["path"] = save_uploaded_file(event)
+            file_hint.set_text(f"Tệp hiện tại: {display_file_name(uploaded_file_ref['path'])}")
             file_hint.set_visibility(True)
             ui.notify(f"Đã tải lên: {event.name}", color="positive")
 
@@ -496,7 +926,7 @@ def open_evidence_dialog(submission: Submission, criterion_id: int | None = None
             type_select.value = "Khác"
             score_select.value = 1
             evidence_input.value = ""
-            uploaded_file_name["name"] = ""
+            uploaded_file_ref["path"] = ""
             file_hint.set_text("")
             file_hint.set_visibility(False)
 
@@ -515,7 +945,9 @@ def open_evidence_dialog(submission: Submission, criterion_id: int | None = None
                             "self_score": score_select.value or 0,
                             "evidence": evidence_input.value or "",
                             "evidence_type": type_select.value or "",
-                            "evidence_file": uploaded_file_name["name"] or "",
+                            "evidence_file": uploaded_file_ref["path"] or "",
+                            "evidence_status": "pending",
+                            "advisor_feedback": "",
                         }
                     }
                     if selected_score and selected_score.criterion_id != chosen_criterion_id:
@@ -524,6 +956,8 @@ def open_evidence_dialog(submission: Submission, criterion_id: int | None = None
                             "evidence": "",
                             "evidence_type": "",
                             "evidence_file": "",
+                            "evidence_status": "pending",
+                            "advisor_feedback": "",
                         }
                     payload = build_submission_payload(refreshed, overrides)
                     update_student_scores(session, refreshed.id, payload, refreshed.student_note or "", False)
@@ -604,15 +1038,17 @@ def evidence_page_content(context: dict) -> None:
                         ui.button("Tải lại", icon="refresh", on_click=lambda: refresh_page("/evidence")).props("outline").classes("rounded-lg")
                 with ui.card().classes("s-card rounded-[8px] p-0 shadow-none overflow-hidden"):
                     with ui.row().classes("table-head w-full"):
-                        for text, width in [("TT", "w-[60px]"), ("Tiêu chí", "w-[110px]"), ("Loại minh chứng", "w-[220px]"), ("Nội dung", "flex-1"), ("Tệp", "w-[90px]"), ("Thao tác", "w-[120px]")]:
+                        for text, width in [("TT", "w-[60px]"), ("Tiêu chí", "w-[110px]"), ("Loại minh chứng", "w-[220px]"), ("Nội dung", "flex-1"), ("Trạng thái", "w-[120px]"), ("Tệp", "w-[90px]"), ("Thao tác", "w-[120px]")]:
                             ui.label(text).classes(f"{width} px-4 py-4 text-[16px]")
                     if evidence_rows:
                         for index, score in enumerate(evidence_rows, start=1):
                             with ui.row().classes("table-row w-full items-center"):
+                                status_text, status_color = evidence_status_meta(score.evidence_status)
                                 ui.label(str(index)).classes("w-[60px] px-4 py-4 text-center")
                                 ui.label(str(bucket_map.get(score.criterion_id, 1))).classes("w-[110px] px-4 py-4 text-center font-bold")
                                 ui.label(score.evidence_type or "Khác").classes("w-[220px] px-4 py-4")
                                 ui.label(score.evidence).classes("flex-1 px-4 py-4")
+                                ui.badge(status_text, color=status_color).classes("w-[120px] px-2 py-2")
                                 ui.label("Có" if score.evidence_file else "Không").classes("w-[90px] px-4 py-4 text-center")
                                 with ui.row().classes("w-[120px] items-center justify-center gap-1"):
                                     edit_btn = ui.button(icon="edit", on_click=lambda cid=score.criterion_id: open_evidence_dialog(submission, cid)).props("flat round").classes("text-blue-600")
@@ -741,15 +1177,15 @@ def score_page_content(context: dict) -> None:
 
                 with ui.column().classes("w-full gap-0"):
                     with ui.row().classes("table-head w-full"):
-                        for label, width in [("NỘI DUNG", "flex-[2.9]"), ("Điểm tối đa", "w-[130px]"), ("Sinh viên tự đánh giá", "w-[160px]"), ("Ban cán sự chấm điểm", "w-[160px]"), ("CVHT chấm điểm", "w-[160px]")]:
+                        for label, width in [("NỘI DUNG", "flex-[2.9]"), ("Điểm tối đa", "w-[130px]"), ("Sinh viên tự đánh giá", "w-[160px]"), ("Cố vấn học tập chấm điểm", "w-[180px]"), ("Quản trị viên xác nhận", "w-[180px]")]:
                             ui.label(label).classes(f"{width} px-4 py-4 text-center text-[17px]")
                     for group in groups:
                         with ui.row().classes("table-row table-group w-full items-center"):
                             ui.label(vi(group.title)).classes("flex-[2.9] px-4 py-4 text-[15px] leading-7")
                             ui.label(str(int(group.max_points))).classes("w-[130px] px-4 py-4 text-center")
                             ui.label("").classes("w-[160px]")
-                            ui.label("").classes("w-[160px]")
-                            ui.label("").classes("w-[160px]")
+                            ui.label("").classes("w-[180px]")
+                            ui.label("").classes("w-[180px]")
                         for criterion in group.criteria:
                             score = score_lookup.get(criterion.id)
                             if score is None:
@@ -763,8 +1199,8 @@ def score_page_content(context: dict) -> None:
                                 else:
                                     self_input = ui.number(value=score.self_score, min=criterion.min_points, max=criterion.max_points, step=0.5, format="%.1f").props("outlined dense").classes("w-[160px] px-2 pt-3")
                                     student_inputs[criterion.id] = {"self_score": self_input}
-                                ui.number(value=score.advisor_score, format="%.1f").props("outlined dense readonly").classes("w-[160px] px-2 pt-3")
-                                ui.number(value=score.advisor_score, format="%.1f").props("outlined dense readonly").classes("w-[160px] px-2 pt-3")
+                                ui.number(value=score.advisor_score, format="%.1f").props("outlined dense readonly").classes("w-[180px] px-2 pt-3")
+                                ui.number(value=score.advisor_score, format="%.1f").props("outlined dense readonly").classes("w-[180px] px-2 pt-3")
                             with ui.row().classes("w-full px-4 pb-4"):
                                 if readonly:
                                     ui.textarea("Minh chứng / ghi chú", value=score.evidence).props("outlined autogrow readonly").classes("w-full")
@@ -799,25 +1235,48 @@ def score_page_content(context: dict) -> None:
 def home_page() -> None:
     if app.storage.user.get("user_id"):
         with get_session() as session:
-            semesters = get_semesters(session)
-            selected_semester_id = get_default_semester_id(session, semesters)
-        app.storage.user["selected_semester_id"] = selected_semester_id
-        ui.navigate.to(f"/score?semester={selected_semester_id}")
+            user = get_user_by_id(session, app.storage.user.get("user_id"))
+            if not user:
+                app.storage.user.clear()
+                redirect("/login")
+                return
+            redirect(get_home_path_for_user(user, session))
     else:
-        ui.navigate.to("/login")
+        redirect("/login")
 
 
 @ui.page("/login")
 def login_page() -> None:
+    existing_home_path = None
     if app.storage.user.get("user_id"):
         with get_session() as session:
-            semesters = get_semesters(session)
-            selected_semester_id = get_default_semester_id(session, semesters)
-        app.storage.user["selected_semester_id"] = selected_semester_id
-        ui.navigate.to(f"/score?semester={selected_semester_id}")
-        return
+            user = get_user_by_id(session, app.storage.user.get("user_id"))
+            if user:
+                existing_home_path = get_home_path_for_user(user, session)
+            else:
+                app.storage.user.clear()
 
     ui.page_title("Đăng nhập hệ thống")
+    ui.add_body_html(
+        f"""
+        <script>
+        (function () {{
+          const hasTabAuth = sessionStorage.getItem('ptit_auth') === '1';
+          const serverHome = {json.dumps(existing_home_path)};
+          if (serverHome && hasTabAuth) {{
+            window.location.href = serverHome;
+            return;
+          }}
+          if (serverHome && !hasTabAuth) {{
+            fetch('/api/logout', {{method: 'POST', credentials: 'same-origin', keepalive: true}});
+          }}
+          if (!serverHome) {{
+            sessionStorage.removeItem('ptit_auth');
+          }}
+        }})();
+        </script>
+        """
+    )
     with ui.element("div").classes("min-h-screen w-full bg-[#f5f6f8]"):
         with ui.row().classes("min-h-screen w-full items-center justify-center px-4"):
             with ui.row().classes("w-full max-w-5xl items-stretch overflow-hidden rounded-[16px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(0,0,0,0.08)]"):
@@ -827,8 +1286,13 @@ def login_page() -> None:
                         ui.label("S-Link").classes("text-[28px] font-medium text-slate-800")
                     ui.label("Hệ thống đánh giá điểm rèn luyện sinh viên. Sau khi đăng nhập, bạn chỉ làm việc với 3 chức năng: Khai báo minh chứng, Sự kiện đã tham gia, Phiếu điểm rèn luyện.").classes("max-w-xl text-lg leading-8 text-slate-500")
                     with ui.card().classes("s-card rounded-[10px] p-5 gap-3 shadow-none"):
-                        ui.label("Tài khoản sinh viên demo").classes("text-xl font-semibold")
-                        for account in ["b23dccn001 / student123", "b23dccn002 / student123"]:
+                        ui.label("Tài khoản demo").classes("text-xl font-semibold")
+                        for account in [
+                            "admin / admin123",
+                            "covan / covan123",
+                            "b23dccn001 / student123",
+                            "b23dccn002 / student123",
+                        ]:
                             ui.label(account).classes("mono text-slate-600")
 
                 with ui.column().classes("w-full max-w-[420px] gap-5 border-l border-slate-200 bg-[#fafafa] px-10 py-12 justify-center"):
@@ -839,19 +1303,14 @@ def login_page() -> None:
                     def handle_login() -> None:
                         with get_session() as session:
                             user = authenticate(session, username.value or "", password.value or "")
-                            semesters = get_semesters(session)
-                            selected_semester_id = get_default_semester_id(session, semesters) if semesters else None
                         if not user:
                             ui.notify("Sai tên đăng nhập hoặc mật khẩu", color="negative")
                             return
-                        if user.role != UserRole.STUDENT:
-                            ui.notify("Bản này chỉ mở giao diện sinh viên.", color="warning")
-                            return
                         app.storage.user["user_id"] = user.id
-                        if selected_semester_id is not None:
-                            app.storage.user["selected_semester_id"] = selected_semester_id
                         ui.notify("Đăng nhập thành công", color="positive")
-                        ui.navigate.to(f"/score?semester={selected_semester_id}" if selected_semester_id is not None else "/score")
+                        with get_session() as session:
+                            refreshed_user = get_user_by_id(session, user.id)
+                            redirect_with_tab_auth(get_home_path_for_user(refreshed_user, session), set_tab_auth=True)
 
                     ui.button("Đăng nhập", icon="login", on_click=handle_login).classes("bg-red-600 text-white rounded-lg")
 
@@ -860,12 +1319,20 @@ def login_page() -> None:
 def evidence_page() -> None:
     if not require_login():
         return
+    user = current_user()
+    if not user or user.role != UserRole.STUDENT:
+        redirect("/portal")
+        return
     render_shell("Khai báo minh chứng", evidence_page_content)
 
 
 @ui.page("/events")
 def events_page() -> None:
     if not require_login():
+        return
+    user = current_user()
+    if not user or user.role != UserRole.STUDENT:
+        redirect("/portal")
         return
     render_shell("Sự kiện đã tham gia", events_page_content)
 
@@ -874,7 +1341,26 @@ def events_page() -> None:
 def score_page() -> None:
     if not require_login():
         return
+    user = current_user()
+    if not user or user.role != UserRole.STUDENT:
+        redirect("/portal")
+        return
     render_shell("Phiếu điểm rèn luyện", score_page_content)
+
+
+@ui.page("/portal")
+def portal_page() -> None:
+    if not require_login():
+        return
+    user = current_user()
+    if not user:
+        redirect("/login")
+        return
+    if user.role == UserRole.STUDENT:
+        with get_session() as session:
+            redirect(get_home_path_for_user(user, session))
+        return
+    render_staff_portal()
 
 
 ui.run(title="PTIT Conduct Evaluation", storage_secret=STORAGE_SECRET, reload=False, favicon="school")
