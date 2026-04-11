@@ -1,0 +1,6 @@
+PRIMARY = "#d92314"
+PRIMARY_SOFT = "#fef2f2"
+BORDER = "#e5e7eb"
+MUTED = "#374151"
+TEXT = "#111827"
+SURFACE = "#f8fafc"

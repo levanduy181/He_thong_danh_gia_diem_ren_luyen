@@ -1,0 +1,13 @@
+*.db
+assets/external/
+.web
+.states
+__pycache__/
+*.py[cod]
+.venv/
+.nicegui/
+data/*.db
+data/*.db-journal
+data/*.backup
+reflex_demo.db
+reflex_demo.db-journal
