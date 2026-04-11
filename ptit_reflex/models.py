@@ -6,12 +6,13 @@ from enum import Enum
 from sqlalchemy import Date, DateTime, Enum as SqlEnum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db import Base
+from ptit_reflex.db import Base
 
 
 class UserRole(str, Enum):
     ADMIN = "admin"
     ADVISOR = "advisor"
+    CLASS_MONITOR = "class_monitor"
     STUDENT = "student"
 
 
@@ -54,6 +55,7 @@ class Semester(Base):
     start_date: Mapped[date] = mapped_column(Date)
     end_date: Mapped[date] = mapped_column(Date)
     is_active: Mapped[bool] = mapped_column(default=True)
+    conduct_stage_windows_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     submissions: Mapped[list["Submission"]] = relationship(back_populates="semester")

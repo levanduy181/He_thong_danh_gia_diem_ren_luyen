@@ -1,1 +1,0 @@
-"""PTIT conduct evaluation application."""

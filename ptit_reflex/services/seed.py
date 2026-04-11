@@ -5,10 +5,7 @@ from datetime import date, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Criterion, CriterionGroup, ScoreEntry, Semester, Submission, SubmissionStatus, User, UserRole, Event
-from app.security import hash_password
-
-
+from ptit_reflex.models import Criterion, CriterionGroup, ScoreEntry, Semester, Submission, SubmissionStatus, User, UserRole, Event
 CRITERION_BLUEPRINT = [
     {
         "title": "Tieu chi 1. Danh gia ve y thuc tham gia hoc tap",
@@ -240,10 +237,11 @@ def seed_default_data(session: Session) -> None:
     if not session.scalar(select(func.count()).select_from(User)):
         session.add_all(
             [
-                User(username="admin", password_hash=hash_password("admin123"), full_name="Quan tri he thong", role=UserRole.ADMIN, email="admin@ptit.edu.vn", faculty="PTIT"),
-                User(username="covan", password_hash=hash_password("covan123"), full_name="Nguyen Thi Co Van", role=UserRole.ADVISOR, email="covan@ptit.edu.vn", faculty="Cong nghe thong tin"),
-                User(username="b23dccn001", password_hash=hash_password("student123"), full_name="Tran Minh Anh", role=UserRole.STUDENT, student_code="B23DCCN001", email="anh.tm@ptit.edu.vn", class_name="D23CQCN01-N", faculty="Cong nghe thong tin", major="Ky thuat phan mem"),
-                User(username="b23dccn002", password_hash=hash_password("student123"), full_name="Le Thu Ha", role=UserRole.STUDENT, student_code="B23DCCN002", email="ha.lt@ptit.edu.vn", class_name="D23CQCN01-N", faculty="Cong nghe thong tin", major="He thong thong tin"),
+                User(username="admin", password_hash="admin123", full_name="Quan tri he thong", role=UserRole.ADMIN, email="admin@ptit.edu.vn", faculty="PTIT"),
+                User(username="covan", password_hash="covan123", full_name="Nguyen Thi Co Van", role=UserRole.ADVISOR, email="covan@ptit.edu.vn", faculty="Cong nghe thong tin"),
+                User(username="bancansu", password_hash="bcs123", full_name="Nguyen Van Lop Truong", role=UserRole.CLASS_MONITOR, email="bancansu@ptit.edu.vn", class_name="D23CQCN01-N", faculty="Cong nghe thong tin", major="Ky thuat phan mem"),
+                User(username="b23dccn001", password_hash="student123", full_name="Tran Minh Anh", role=UserRole.STUDENT, student_code="B23DCCN001", email="anh.tm@ptit.edu.vn", class_name="D23CQCN01-N", faculty="Cong nghe thong tin", major="Ky thuat phan mem"),
+                User(username="b23dccn002", password_hash="student123", full_name="Le Thu Ha", role=UserRole.STUDENT, student_code="B23DCCN002", email="ha.lt@ptit.edu.vn", class_name="D23CQCN01-N", faculty="Cong nghe thong tin", major="He thong thong tin"),
             ]
         )
 
