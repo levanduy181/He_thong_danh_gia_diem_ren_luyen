@@ -1,13 +1,20 @@
+<<<<<<< HEAD
 *.db
 assets/external/
 .web
 .states
+=======
+>>>>>>> f50dfa7285a90d886cb7563401281a0e7f49a6a5
 __pycache__/
 *.py[cod]
 .venv/
 .nicegui/
 data/*.db
+<<<<<<< HEAD
 data/*.db-journal
 data/*.backup
 reflex_demo.db
 reflex_demo.db-journal
+=======
+data/*.backup
+>>>>>>> f50dfa7285a90d886cb7563401281a0e7f49a6a5
