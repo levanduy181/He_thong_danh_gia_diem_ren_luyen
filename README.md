@@ -2,167 +2,68 @@
 
 Ứng dụng web quản lý điểm rèn luyện sinh viên PTIT, viết bằng `Reflex`, lưu dữ liệu bằng `SQLite`.
 
-README này viết cho trường hợp người dùng chưa cài gì, chỉ cần clone repo rồi làm lần lượt để chạy được trên Windows.
-
-## 1. Cần cài gì trước
-
-Trước khi chạy dự án, máy cần có:
+## Yêu cầu
 
 - `Git`
 - `Python 3.12` hoặc `Python 3.13`
-- `Node.js LTS` để có `npm`
+- `Node.js LTS`
 
-Khuyến nghị:
+Không nên dùng `Python 3.14` vì `Reflex` vẫn còn cảnh báo tương thích.
 
-- dùng `Python 3.13`
-- không dùng `Python 3.14` nếu có thể, vì `Reflex` hiện vẫn cảnh báo tương thích
-
-Không cần cài riêng:
-
-- `SQLite`
-- `Reflex` global
-- `SQLAlchemy` global
-
-## 2. Clone code
-
-Mở `PowerShell`, chạy:
+## Clone và chạy nhanh
 
 ```powershell
 git clone <repo-url>
 cd python--btl
+powershell -ExecutionPolicy Bypass -File .\setup_and_run.ps1
 ```
 
-Thay `<repo-url>` bằng link GitHub của repo của bạn.
+Script `setup_and_run.ps1` sẽ tự:
 
-## 3. Tạo môi trường Python
+- tạo `.venv`
+- cài `requirements.txt`
+- tạo thư mục `data`
+- compile app để sinh `.web`
+- cài `tslib` trong `.web` nếu thiếu
+- chạy ứng dụng
 
-Khuyến nghị dùng `py` trên Windows:
+Sau khi chạy, mở `http://localhost:3000`.
+
+## Chạy thủ công
 
 ```powershell
 py -3.13 -m venv .venv
-```
-
-Nếu máy bạn cài `Python 3.12` thì dùng:
-
-```powershell
-py -3.12 -m venv .venv
-```
-
-Nếu lệnh `py` không có, có thể dùng:
-
-```powershell
-python -m venv .venv
-```
-
-## 4. Cài thư viện Python
-
-Không cần activate môi trường ảo, có thể chạy trực tiếp như sau:
-
-```powershell
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-File [requirements.txt](D:/PTIT/ki_2_nam_3/python/python--btl/requirements.txt:1) hiện gồm:
-
-- `reflex==0.8.28.post1`
-- `SQLAlchemy==2.0.49`
-- `fpdf2==2.8.5`
-
-## 5. Tạo thư mục dữ liệu
-
-Project này yêu cầu tự tạo thư mục `data` trước khi chạy:
-
-```powershell
 mkdir data
-```
-
-Nếu không tạo, [main.py](D:/PTIT/ki_2_nam_3/python/python--btl/main.py:1) sẽ dừng và báo lỗi.
-
-## 6. Chạy ứng dụng
-
-Chạy bằng:
-
-```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Hoặc nếu bạn đã activate `.venv` thì có thể dùng:
+Nếu máy không có `py`, có thể thay bằng `python`.
 
-```powershell
-python main.py
-```
+## Tài khoản mẫu
 
-Lần chạy đầu:
+- `admin / admin123`
+- `CVHT001 / CVHT001` lớp `D23CQAT001`
+- `CVHT002 / CVHT002` lớp `D23CQAT002`
+- `CVHT003 / CVHT003` lớp `D23CQCN001`
+- `CVHT004 / CVHT004` lớp `D23CQCN002`
 
-- `Reflex` sẽ compile giao diện
-- thư mục `.web/` sẽ được sinh ra tự động
-- database `data/reflex_student_conduct.db` sẽ được tạo tự động
+Mỗi lớp có `3` tài khoản phía sinh viên, trong đó `1` tài khoản là ban cán sự:
 
-Khi chạy thành công, thường sẽ thấy:
+- `D23CQAT001`: `B23DCAT001`, `B23DCAT002`, `B23DCAT003`
+- `D23CQAT002`: `B23DCAT004`, `B23DCAT005`, `B23DCAT006`
+- `D23CQCN001`: `B23DCCN001`, `B23DCCN002`, `B23DCCN003`
+- `D23CQCN002`: `B23DCCN004`, `B23DCCN005`, `B23DCCN006`
 
-- frontend: `http://localhost:3000`
-- backend: `http://0.0.0.0:8000` hoặc `http://0.0.0.0:8001`
+Mật khẩu của các tài khoản sinh viên và ban cán sự đều bằng đúng mã sinh viên.
 
-Hãy mở trình duyệt tại:
+## Dữ liệu seed sẵn
 
-```text
-http://localhost:3000
-```
-
-## 7. Dữ liệu mẫu hiện tại
-
-Sau khi DB được tạo mới, hệ thống sẽ seed sẵn:
-
-- `1` admin
-- `4` cố vấn học tập
-- `4` ban cán sự
-- `8` sinh viên thường
 - `48` phiếu điểm rèn luyện lịch sử
 - `6` sự kiện mẫu
 
-### Tài khoản admin
-
-- `admin / admin123`
-
-### Tài khoản cố vấn học tập
-
-- `CVHT001 / CVHT001` cho lớp `D23CQAT001`
-- `CVHT002 / CVHT002` cho lớp `D23CQAT002`
-- `CVHT003 / CVHT003` cho lớp `D23CQCN001`
-- `CVHT004 / CVHT004` cho lớp `D23CQCN002`
-
-### Tài khoản sinh viên và ban cán sự
-
-Mật khẩu của các tài khoản này đều bằng đúng mã sinh viên.
-
-#### Lớp `D23CQAT001`
-
-- `B23DCAT001 / B23DCAT001` `ban cán sự`
-- `B23DCAT002 / B23DCAT002`
-- `B23DCAT003 / B23DCAT003`
-
-#### Lớp `D23CQAT002`
-
-- `B23DCAT004 / B23DCAT004` `ban cán sự`
-- `B23DCAT005 / B23DCAT005`
-- `B23DCAT006 / B23DCAT006`
-
-#### Lớp `D23CQCN001`
-
-- `B23DCCN001 / B23DCCN001` `ban cán sự`
-- `B23DCCN002 / B23DCCN002`
-- `B23DCCN003 / B23DCCN003`
-
-#### Lớp `D23CQCN002`
-
-- `B23DCCN004 / B23DCCN004` `ban cán sự`
-- `B23DCCN005 / B23DCCN005`
-- `B23DCCN006 / B23DCCN006`
-
-## 8. Sự kiện mẫu có sẵn
-
-DB mới hiện được seed sẵn các sự kiện:
+Các sự kiện mặc định:
 
 - `Seminar An toàn hệ thống 2026`
 - `Tọa đàm nghiên cứu khoa học sinh viên`
@@ -171,9 +72,7 @@ DB mới hiện được seed sẵn các sự kiện:
 - `Hội thảo kỹ năng CV và phỏng vấn`
 - `Ngày hội việc làm PTIT 2026`
 
-## 9. Cách reset dữ liệu
-
-Nếu muốn xóa sạch dữ liệu và tạo lại từ seed:
+## Reset dữ liệu
 
 ```powershell
 Remove-Item data\reflex_student_conduct.db -Force
@@ -183,138 +82,68 @@ Remove-Item data\reflex_student_conduct.db -Force
 Nếu muốn xóa luôn file upload runtime:
 
 ```powershell
-Remove-Item uploaded_files\evidence -Recurse -Force
+Remove-Item uploaded_files -Recurse -Force
 ```
 
-## 10. Lỗi thường gặp
+## Lỗi thường gặp
 
-### Lỗi thiếu `data`
-
-Thông báo thường gặp:
-
-```text
-Khong tim thay thu muc data. Hay tu tao thu muc 'data' truoc khi chay ung dung.
-```
-
-Cách sửa:
+### Thiếu thư mục `data`
 
 ```powershell
 mkdir data
 .\.venv\Scripts\python.exe main.py
 ```
 
-### Lỗi thiếu `npm`
+### Thiếu `npm`
 
-Thông báo thường gặp:
+Cài `Node.js LTS`, mở terminal mới rồi chạy lại app.
 
-```text
-Khong tim thay npm. Hay cai Node.js LTS tu https://nodejs.org
-```
-
-Cách sửa:
-
-- cài `Node.js LTS`
-- đóng PowerShell cũ
-- mở PowerShell mới
-- chạy lại app
-
-### Lỗi thiếu thư viện PDF `fpdf2`
-
-Thông báo thường gặp:
-
-```text
-Khong tim thay thu vien 'fpdf2'
-```
-
-Hoặc trong app khi tải PDF sẽ báo thiếu thư viện tạo PDF.
-
-Cách sửa:
+### Thiếu `fpdf2`
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Sau đó tắt app đang chạy và mở lại:
+### Lỗi `Cannot find module 'tslib'`
 
 ```powershell
+Remove-Item .web -Recurse -Force
 .\.venv\Scripts\python.exe main.py
 ```
 
-### Cảnh báo Pydantic / Python 3.14
+Nếu lỗi vẫn còn, dừng app rồi chạy:
 
-Nếu thấy cảnh báo kiểu:
-
-```text
-Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+```powershell
+cd .web
+npm install tslib --no-save --legacy-peer-deps
+cd ..
+.\.venv\Scripts\python.exe main.py
 ```
 
-thì đó là cảnh báo từ `Reflex`, không phải lỗi logic của dự án.
+### PowerShell chặn `Activate.ps1`
 
-Nếu muốn chạy ổn định hơn, dùng:
-
-- `Python 3.12`
-- hoặc `Python 3.13`
-
-### PowerShell không cho activate `.venv`
-
-Nếu bạn bị chặn `Activate.ps1`, không cần sửa gì cả. Chỉ cần chạy trực tiếp bằng Python trong `.venv`:
+Không cần activate `.venv`. Chạy trực tiếp:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe main.py
 ```
 
-## 11. Cấu trúc thư mục chính
+## Cấu trúc chính
 
-### Root
+- `main.py`: launcher chạy `Reflex`
+- `setup_and_run.ps1`: script cài và chạy một lệnh cho Windows
+- `requirements.txt`: thư viện Python
+- `rxconfig.py`: cấu hình `Reflex`
+- `ptit_reflex/data.py`: seed, query, phân quyền, phiếu điểm, minh chứng, sự kiện
+- `ptit_reflex/state.py`: state và event handler
+- `ptit_reflex/views.py`: ghép giao diện theo tab
+- `ptit_reflex/pdf_export.py`: xuất PDF
+- `ptit_reflex/ui/`: các thành phần giao diện
+- `ptit_reflex/services/`: helper nghiệp vụ
 
-- [main.py](D:/PTIT/ki_2_nam_3/python/python--btl/main.py:1): file khởi chạy app
-- [rxconfig.py](D:/PTIT/ki_2_nam_3/python/python--btl/rxconfig.py:1): cấu hình `Reflex`
-- [requirements.txt](D:/PTIT/ki_2_nam_3/python/python--btl/requirements.txt:1): thư viện Python
-- `data/`: nơi lưu DB
-- `uploaded_files/`: nơi lưu file upload runtime
-- `.web/`: frontend do `Reflex` generate
-- `ptit_reflex/`: mã nguồn chính
-
-### Trong `ptit_reflex/`
-
-- [data.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/data.py:1): seed, query, phân quyền, phiếu điểm, minh chứng, sự kiện
-- [state.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/state.py:1): state và event handler của app
-- [views.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/views.py:1): ghép giao diện theo tab
-- [pdf_export.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/pdf_export.py:1): xuất PDF
-- [models.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/models.py:1): model ORM gốc
-- `ui/`: các thành phần giao diện
-- `services/`: helper seed và evaluation
-
-## 12. Nên sửa file nào
-
-Khi làm tính năng mới, thường sẽ sửa:
-
-- [ptit_reflex/data.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/data.py:1)
-- [ptit_reflex/state.py](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/state.py:1)
-- các file trong [ptit_reflex/ui](D:/PTIT/ki_2_nam_3/python/python--btl/ptit_reflex/ui)
-
-Không nên sửa tay nếu không thực sự cần:
+Không nên sửa tay:
 
 - `.web/`
 - `.venv/`
 - `uploaded_files/`
-
-## 13. Quy trình ngắn gọn nhất
-
-Nếu muốn cách chạy ngắn nhất cho máy mới:
-
-```powershell
-git clone <repo-url>
-cd python--btl
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-mkdir data
-.\.venv\Scripts\python.exe main.py
-```
-
-Sau đó mở:
-
-```text
-http://localhost:3000
-```

@@ -66,22 +66,17 @@ def approve_event_participation(session: Session, participation_id: int) -> Even
     participation.status = ParticipationStatus.APPROVED
     participation.reviewed_at = datetime.utcnow()
 
-    # Apply points to student's submission for that semester
     event = participation.event
     submission = session.scalar(select(Submission).where(Submission.student_id == participation.student_id, Submission.semester_id == event.semester_id).options(joinedload(Submission.scores).joinedload(ScoreEntry.criterion)))
     if not submission:
-        # Create submission if not exists
         submission = get_or_create_submission(session, participation.student_id, event.semester_id)
 
-    # Find score entry for the event's criterion
     for score in submission.scores:
         if score.criterion_id == event.criterion_id:
             max_p = score.criterion.max_points if score.criterion else 0
             min_p = score.criterion.min_points if score.criterion else 0
-            # Increase score by event points strictly
             score.self_score = _clamp_score(score.self_score + event.points, min_p, max_p)
             score.advisor_score = _clamp_score(score.advisor_score + event.points, min_p, max_p)
-            # Add to evidence notes
             note_line = f"[+] Cong diem tu Su Kien: {event.name} ({event.points} d)"
             score.evidence = f"{score.evidence}\n{note_line}".strip()
             score.advisor_feedback = f"{score.advisor_feedback}\n{note_line}".strip()

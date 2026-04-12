@@ -33,11 +33,7 @@ def main() -> int:
         )
         return 1
 
-    # Reflex is more stable on Windows when npm is preferred explicitly.
     env.setdefault("REFLEX_USE_NPM", "1")
-
-    # Giảm hot-reload backend khi có ghi file trong thư mục data (SQLite, v.v.).
-    # Dòng "Compiling" trong log = Reflex biên dịch lại sau khi tiến trình backend khởi động lại.
     if not env.get("REFLEX_HOT_RELOAD_EXCLUDE_PATHS"):
         env["REFLEX_HOT_RELOAD_EXCLUDE_PATHS"] = "data"
 
