@@ -273,6 +273,7 @@ class ConductState(rx.State):
             selected_semester_id=self.selected_semester_id or None,
             target_student_id=self.selected_student_id or None,
             selected_category_key=self.selected_evidence_category or None,
+            active_tab=self.active_tab,
         )
         self._apply_snapshot(snapshot)
 
@@ -998,7 +999,7 @@ class ConductState(rx.State):
 
     @rx.var
     def show_self_score_tab(self) -> bool:
-        return self.current_user_role == "student"
+        return self.current_user_role in {"student", "class_monitor"}
 
     @rx.var
     def show_students_score_tab(self) -> bool:

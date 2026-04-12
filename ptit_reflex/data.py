@@ -1808,11 +1808,20 @@ def preferred_semester(
     target_student: User,
     semesters: list[Semester],
     selected_semester_id: int | None,
+    active_tab: str | None = None,
 ) -> Semester:
     if selected_semester_id:
         found = next((semester for semester in semesters if semester.id == selected_semester_id), None)
         if found:
             return found
+    if current_user.role == UserRole.CLASS_MONITOR and current_user.id != target_student.id and active_tab == "students_score":
+        pending = session.scalar(
+            select(ReflexSubmission)
+            .where(ReflexSubmission.student_id == target_student.id, ReflexSubmission.status == "student_submitted")
+            .order_by(ReflexSubmission.updated_at.desc())
+        )
+        if pending:
+            return next(semester for semester in semesters if semester.id == pending.semester_id)
     if current_user.role == UserRole.CLASS_MONITOR and current_user.id != target_student.id:
         pending_evidence_semester = session.scalar(
             select(Semester)
@@ -2167,6 +2176,7 @@ def build_snapshot(
     selected_semester_id: int | None = None,
     target_student_id: int | None = None,
     selected_category_key: str | None = None,
+    active_tab: str | None = None,
 ) -> dict:
     ensure_reflex_demo_data()
     with get_reflex_session() as session:
@@ -2184,7 +2194,14 @@ def build_snapshot(
         students = account_scope_students(session, current_user)
         target_student = preferred_student(session, current_user, students, target_student_id)
         semesters = get_semesters(session)
-        selected_semester = preferred_semester(session, current_user, target_student, semesters, selected_semester_id)
+        selected_semester = preferred_semester(
+            session,
+            current_user,
+            target_student,
+            semesters,
+            selected_semester_id,
+            active_tab,
+        )
 
         category_key = selected_category_key or EVIDENCE_CATEGORIES[0]["key"]
         if category_key not in CATEGORY_LABELS:
