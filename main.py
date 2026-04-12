@@ -9,7 +9,15 @@ from pathlib import Path
 
 def main() -> int:
     project_root = Path(__file__).resolve().parent
+    data_dir = project_root / "data"
     env = os.environ.copy()
+
+    if not data_dir.is_dir():
+        print(
+            "Khong tim thay thu muc data. Hay tu tao thu muc 'data' truoc khi chay ung dung.",
+            file=sys.stderr,
+        )
+        return 1
 
     # Reflex is more stable on Windows when npm is preferred explicitly.
     env.setdefault("REFLEX_USE_NPM", "1")

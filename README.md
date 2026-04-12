@@ -31,10 +31,12 @@
 
 ```bash
 pip install -r requirements.txt
+mkdir data
 python main.py
 ```
 
 App chạy mặc định tại `http://127.0.0.1:3000`.
+Thư mục `data/` phải được tạo thủ công trước khi chạy app.
 
 ## Dữ liệu
 

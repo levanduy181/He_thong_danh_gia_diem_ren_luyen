@@ -757,8 +757,16 @@ def load_suppressed_seed_usernames() -> set[str]:
     return {str(item).strip() for item in data if str(item).strip()}
 
 
+def ensure_data_dir_exists() -> None:
+    if DATA_DIR.is_dir():
+        return
+    if DATA_DIR.exists():
+        raise NotADirectoryError(f"Đường dẫn dữ liệu không phải thư mục: {DATA_DIR}")
+    raise FileNotFoundError(f"Không tìm thấy thư mục dữ liệu: {DATA_DIR}. Hãy tự tạo thư mục 'data' trước khi chạy ứng dụng.")
+
+
 def save_suppressed_seed_usernames(usernames: set[str]) -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_data_dir_exists()
     SUPPRESSED_SEED_USERS_PATH.write_text(
         json.dumps(sorted(usernames), ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -1981,7 +1989,7 @@ def ensure_historical_reflex_submissions(session: Session, students: list[User],
 
 
 def ensure_reflex_demo_data() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_data_dir_exists()
     Base.metadata.create_all(reflex_engine)
     ensure_semester_stage_windows_column()
     ensure_user_profile_columns()
