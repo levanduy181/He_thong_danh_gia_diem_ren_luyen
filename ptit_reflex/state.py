@@ -28,6 +28,7 @@ from ptit_reflex.data import (
     update_user_profile,
     update_user_role,
 )
+from ptit_reflex.services.evidence_files import delete_evidence_upload, is_image_file, save_evidence_upload
 
 
 EVIDENCE_UPLOAD_ID = "evidence_upload"
@@ -142,6 +143,8 @@ class ConductState(rx.State):
     evidence_participation_time: str = ""
     evidence_url: str = ""
     evidence_file_name: str = ""
+    evidence_file_path: str = ""
+    evidence_file_is_image: bool = False
     evidence_event_name: str = ""
     evidence_share_time: str = ""
     evidence_social_type: str = ""
@@ -455,6 +458,7 @@ class ConductState(rx.State):
         self._set_flash(f"Đăng nhập thành công ({auth['role_label']}).", "success")
 
     def logout(self) -> None:
+        self._clear_pending_evidence_upload(delete_file=True)
         self.is_authenticated = False
         self.loading = False
         self.auth_mode = "login"
@@ -823,12 +827,20 @@ class ConductState(rx.State):
     def set_note_value(self, field_name: str, value: str) -> None:
         setattr(self, field_name, value)
 
-    def reset_evidence_form(self) -> None:
+    def _clear_pending_evidence_upload(self, *, delete_file: bool) -> None:
+        stored_path = self.evidence_file_path.strip()
+        if delete_file and stored_path:
+            delete_evidence_upload(stored_path)
+        self.evidence_file_name = ""
+        self.evidence_file_path = ""
+        self.evidence_file_is_image = False
+
+    def _reset_evidence_form(self, *, delete_uploaded_file: bool) -> None:
+        self._clear_pending_evidence_upload(delete_file=delete_uploaded_file)
         self.evidence_award_level = ""
         self.evidence_activity_content = ""
         self.evidence_participation_time = ""
         self.evidence_url = ""
-        self.evidence_file_name = ""
         self.evidence_event_name = ""
         self.evidence_share_time = ""
         self.evidence_social_type = ""
@@ -842,18 +854,29 @@ class ConductState(rx.State):
         self.evidence_host_name = ""
         self.evidence_host_phone = ""
 
-    def handle_evidence_upload(self, files: list[rx.UploadFile]) -> None:
+    def reset_evidence_form(self) -> None:
+        self._reset_evidence_form(delete_uploaded_file=True)
+
+    async def handle_evidence_upload(self, files: list[rx.UploadFile]) -> None:
+        self._clear_pending_evidence_upload(delete_file=True)
         if not files:
-            self.evidence_file_name = ""
             return
-        self.evidence_file_name = str(files[0].filename or "")
+        try:
+            stored_path, original_name = await save_evidence_upload(files[0])
+        except OSError:
+            self._set_flash("Không thể lưu tệp minh chứng. Hãy chọn lại tệp khác.", "error")
+            return
+        self.evidence_file_name = original_name
+        self.evidence_file_path = stored_path
+        self.evidence_file_is_image = is_image_file(original_name)
 
     def open_evidence_modal(self) -> None:
-        self.reset_evidence_form()
+        self._reset_evidence_form(delete_uploaded_file=True)
         self.evidence_modal_open = True
         return rx.clear_selected_files(EVIDENCE_UPLOAD_ID)
 
     def close_evidence_modal(self) -> None:
+        self._reset_evidence_form(delete_uploaded_file=True)
         self.evidence_modal_open = False
         return rx.clear_selected_files(EVIDENCE_UPLOAD_ID)
 
@@ -865,6 +888,7 @@ class ConductState(rx.State):
                 "participation_time": self.evidence_participation_time.strip(),
                 "url": self.evidence_url.strip(),
                 "file_name": self.evidence_file_name.strip(),
+                "file_path": self.evidence_file_path.strip(),
             }
         if self.selected_evidence_category == "positive_promotion":
             return {
@@ -873,6 +897,7 @@ class ConductState(rx.State):
                 "share_time": self.evidence_share_time.strip(),
                 "url": self.evidence_url.strip(),
                 "file_name": self.evidence_file_name.strip(),
+                "file_path": self.evidence_file_path.strip(),
             }
         if self.selected_evidence_category == "social_work":
             return {
@@ -880,6 +905,7 @@ class ConductState(rx.State):
                 "participation_time": self.evidence_participation_time.strip(),
                 "url": self.evidence_url.strip(),
                 "file_name": self.evidence_file_name.strip(),
+                "file_path": self.evidence_file_path.strip(),
             }
         if self.evidence_residence_type.strip() == "Nội trú":
             return {
@@ -887,6 +913,7 @@ class ConductState(rx.State):
                 "dormitory": self.evidence_dormitory.strip(),
                 "room_number": self.evidence_room_number.strip(),
                 "file_name": self.evidence_file_name.strip(),
+                "file_path": self.evidence_file_path.strip(),
             }
         return {
             "residence_type": self.evidence_residence_type.strip(),
@@ -897,10 +924,14 @@ class ConductState(rx.State):
             "host_name": self.evidence_host_name.strip(),
             "host_phone": self.evidence_host_phone.strip(),
             "file_name": self.evidence_file_name.strip(),
+            "file_path": self.evidence_file_path.strip(),
         }
 
     def submit_evidence(self) -> None:
         payload = self._evidence_payload()
+        if self.evidence_file_name.strip() and not self.evidence_file_path.strip():
+            self._set_flash("Tệp minh chứng chưa được lưu thành công. Hãy chọn lại tệp.", "error")
+            return
         required = {
             "special_achievement": ["award_level", "activity_content", "participation_time", "file_name"],
             "positive_promotion": ["activity_content", "share_time", "file_name"],
@@ -928,7 +959,7 @@ class ConductState(rx.State):
             self._set_flash(str(exc), "error")
             return
         self.evidence_modal_open = False
-        self.reset_evidence_form()
+        self._reset_evidence_form(delete_uploaded_file=False)
         self._refresh()
         self._set_flash("Đã thêm minh chứng mới.", "success")
         return rx.clear_selected_files(EVIDENCE_UPLOAD_ID)
@@ -1271,6 +1302,14 @@ class ConductState(rx.State):
     @rx.var
     def show_students_events_tab(self) -> bool:
         return self.current_user_role == "class_monitor"
+
+    @rx.var
+    def show_create_evidence_action(self) -> bool:
+        return bool(self.can_create_evidence and self.active_tab != "students_evidence")
+
+    @rx.var
+    def show_delete_evidence_action(self) -> bool:
+        return self.active_tab != "students_evidence"
 
     @rx.var
     def show_role_management_tab(self) -> bool:

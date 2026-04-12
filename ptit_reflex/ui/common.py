@@ -656,7 +656,7 @@ def login_page() -> rx.Component:
                     rx.text(
                         rx.cond(
                             ConductState.auth_mode == "login",
-                            "Nhập tài khoản của bạn; hệ thống nhận diện vai trò theo dữ liệu tài khoản.",
+                            "",
                             "Tài khoản mới mặc định có quyền Sinh viên. Admin có thể cấp mọi quyền; cố vấn chỉ cấp Ban cán sự cho sinh viên.",
                         ),
                         font_size="14px",

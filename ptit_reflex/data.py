@@ -28,6 +28,7 @@ from ptit_reflex.services.evaluation_service import (
     get_semesters,
     submit_event_participation,
 )
+from ptit_reflex.services.evidence_files import delete_evidence_upload, is_image_file, resolve_evidence_upload
 from ptit_reflex.services.seed import CRITERION_BLUEPRINT, seed_default_data
 
 
@@ -2251,8 +2252,25 @@ def serialize_evidence_detail(evidence: ReflexEvidence, current_user: User, targ
     fields = []
     for key, label in field_defs:
         val = str(payload.get(key, "") or "")
+        file_path = resolve_evidence_upload(str(payload.get("file_path", "") or ""), val) if key == "file_name" else ""
         is_link = key == "url" and val.startswith(("http://", "https://"))
-        fields.append({"label": label, "value": val, "is_link": is_link})
+        is_file = key == "file_name" and bool(file_path)
+        fields.append(
+            {
+                "label": label,
+                "value": val
+                or (
+                    "Mở tệp minh chứng"
+                    if is_file
+                    else ("Không tìm thấy tệp minh chứng" if key == "file_name" else "")
+                ),
+                "is_link": is_link,
+                "is_file": is_file,
+                "file_path": file_path,
+                "is_image": is_file and is_image_file(val or file_path),
+                "is_missing_file": key == "file_name" and bool(val) and not is_file,
+            }
+        )
     return {
         "id": evidence.id,
         "title": CATEGORY_LABELS.get(evidence.category_key, "Chi tiết minh chứng"),
@@ -2778,6 +2796,14 @@ def load_evidence_detail(evidence_id: int, current_user_id: int, target_student_
         semester = session.get(Semester, evidence.semester_id)
         if not semester:
             raise ValueError("Không tìm thấy học kỳ của minh chứng.")
+        payload = load_payload(evidence)
+        resolved_file_path = resolve_evidence_upload(
+            str(payload.get("file_path", "") or ""),
+            str(payload.get("file_name", "") or ""),
+        )
+        if resolved_file_path and payload.get("file_path") != resolved_file_path:
+            payload["file_path"] = resolved_file_path
+            evidence.payload_json = json.dumps(payload, ensure_ascii=False)
         return serialize_evidence_detail(evidence, current_user, target_student, semester)
 
 
@@ -2845,6 +2871,13 @@ def delete_evidence(current_user_id: int, evidence_id: int) -> None:
             and current_window_index(semester) != 0
         ):
             raise ValueError("Chỉ được xóa minh chứng trong giai đoạn minh chứng.")
+        payload = load_payload(evidence)
+        delete_evidence_upload(
+            resolve_evidence_upload(
+                str(payload.get("file_path", "") or ""),
+                str(payload.get("file_name", "") or ""),
+            )
+        )
         session.delete(evidence)
 
 

@@ -100,8 +100,12 @@ def evidence_row(row: dict) -> rx.Component:
                 rx.hstack(
                     action_button("Mở", ConductState.open_evidence_detail(row["id"]), background="white", color=TEXT, border=f"1px solid {BORDER}", height="32px", padding="0 12px"),
                     rx.cond(
-                        row["can_delete"],
-                        action_button("Xóa", ConductState.remove_evidence(row["id"]), background="#fff1f2", color=PRIMARY, border="1px solid #fecdd3", height="32px", padding="0 12px"),
+                        ConductState.show_delete_evidence_action,
+                        rx.cond(
+                            row["can_delete"],
+                            action_button("Xóa", ConductState.remove_evidence(row["id"]), background="#fff1f2", color=PRIMARY, border="1px solid #fecdd3", height="32px", padding="0 12px"),
+                            rx.fragment(),
+                        ),
                         rx.fragment(),
                     ),
                     spacing="2",
@@ -206,6 +210,36 @@ def evidence_file_picker() -> rx.Component:
                 spacing="2",
                 align="center",
                 flex_wrap="wrap",
+            ),
+            rx.fragment(),
+        ),
+        rx.cond(
+            ConductState.evidence_file_path != "",
+            rx.box(
+                rx.cond(
+                    ConductState.evidence_file_is_image,
+                    rx.image(
+                        src=rx.get_upload_url(ConductState.evidence_file_path),
+                        alt=ConductState.evidence_file_name,
+                        width="100%",
+                        max_height="280px",
+                        object_fit="contain",
+                        border_radius="10px",
+                    ),
+                    rx.link(
+                        "Mở tệp đã chọn",
+                        href=rx.get_upload_url(ConductState.evidence_file_path),
+                        is_external=True,
+                        color=PRIMARY,
+                        font_weight="700",
+                        text_decoration="underline",
+                    ),
+                ),
+                width="100%",
+                padding="10px",
+                border=f"1px solid {BORDER}",
+                border_radius="10px",
+                background="white",
             ),
             rx.fragment(),
         ),
@@ -336,6 +370,92 @@ def evidence_modal() -> rx.Component:
 
 
 def evidence_detail_modal() -> rx.Component:
+    def evidence_detail_field(item: dict) -> rx.Component:
+        return rx.vstack(
+            rx.text(item["label"], font_size="13px", font_weight="700", color=MUTED),
+            rx.cond(
+                item["is_file"],
+                rx.box(
+                    rx.vstack(
+                        rx.cond(
+                            item["is_image"],
+                            rx.image(
+                                src=rx.get_upload_url(item["file_path"]),
+                                alt=item["value"],
+                                width="100%",
+                                max_height="360px",
+                                object_fit="contain",
+                                border_radius="10px",
+                            ),
+                            rx.fragment(),
+                        ),
+                        rx.link(
+                            item["value"],
+                            href=rx.get_upload_url(item["file_path"]),
+                            is_external=True,
+                            color=PRIMARY,
+                            font_weight="600",
+                            font_size="15px",
+                            text_decoration="underline",
+                        ),
+                        spacing="3",
+                        align="start",
+                        width="100%",
+                    ),
+                    width="100%",
+                    padding="12px 14px",
+                    border=f"1px solid {BORDER}",
+                    border_radius="8px",
+                    background=SURFACE,
+                ),
+                rx.cond(
+                    item["is_missing_file"],
+                    rx.box(
+                        rx.text(
+                            "Không tìm thấy tệp minh chứng cũ. Hãy tải lại minh chứng nếu cần xem ảnh.",
+                            font_size="15px",
+                            color="#b91c1c",
+                        ),
+                        width="100%",
+                        padding="12px 14px",
+                        border="1px solid #fecaca",
+                        border_radius="8px",
+                        background="#fff1f2",
+                    ),
+                    rx.cond(
+                        item["is_link"],
+                        rx.box(
+                            rx.link(
+                                item["value"],
+                                href=item["value"],
+                            is_external=True,
+                            color=PRIMARY,
+                            font_weight="600",
+                            font_size="15px",
+                            text_decoration="underline",
+                        ),
+                        width="100%",
+                        padding="12px 14px",
+                        border=f"1px solid {BORDER}",
+                        border_radius="8px",
+                        background=SURFACE,
+                    ),
+                    rx.box(
+                        rx.text(item["value"], font_size="15px", color=TEXT),
+                        width="100%",
+                        padding="12px 14px",
+                        border=f"1px solid {BORDER}",
+                        border_radius="8px",
+                            background=SURFACE,
+                        ),
+                    ),
+                ),
+            ),
+            spacing="2",
+            width="100%",
+            align="stretch",
+        )
+
     return rx.cond(
         ConductState.evidence_detail_open,
         modal_shell(
@@ -344,39 +464,7 @@ def evidence_detail_modal() -> rx.Component:
                 rx.text(ConductState.selected_evidence_status_label, color=PRIMARY, font_size="13px", font_weight="700"),
                 rx.foreach(
                     ConductState.selected_evidence_fields,
-                    lambda item: rx.vstack(
-                        rx.text(item["label"], font_size="13px", font_weight="700", color=MUTED),
-                        rx.cond(
-                            item["is_link"],
-                            rx.box(
-                                rx.link(
-                                    item["value"],
-                                    href=item["value"],
-                                    is_external=True,
-                                    color=PRIMARY,
-                                    font_weight="600",
-                                    font_size="15px",
-                                    text_decoration="underline",
-                                ),
-                                width="100%",
-                                padding="12px 14px",
-                                border=f"1px solid {BORDER}",
-                                border_radius="8px",
-                                background=SURFACE,
-                            ),
-                            rx.box(
-                                rx.text(item["value"], font_size="15px", color=TEXT),
-                                width="100%",
-                                padding="12px 14px",
-                                border=f"1px solid {BORDER}",
-                                border_radius="8px",
-                                background=SURFACE,
-                            ),
-                        ),
-                        spacing="2",
-                        width="100%",
-                        align="stretch",
-                    ),
+                    evidence_detail_field,
                 ),
                 spacing="4",
                 width="100%",
@@ -479,7 +567,7 @@ def evidence_page() -> rx.Component:
                     rx.hstack(
                         rx.text("Danh sách minh chứng", font_size="18px", font_weight="700", color=TEXT),
                         rx.hstack(
-                            rx.cond(ConductState.can_create_evidence, action_button("Thêm mới", ConductState.open_evidence_modal), rx.fragment()),
+                            rx.cond(ConductState.show_create_evidence_action, action_button("Thêm mới", ConductState.open_evidence_modal), rx.fragment()),
                             action_button("Tải lại", ConductState.load, background="white", color=TEXT, border=f"1px solid {BORDER}"),
                             rx.box(rx.text("Tổng số: ", color=MUTED), rx.text(ConductState.evidence_count, color=PRIMARY, font_weight="700"), display="flex", align_items="center", gap="4px", padding="0 14px", height="38px", border=f"1px solid {BORDER}", border_radius="8px", background="white"),
                             rx.box(action_button("⚙", ConductState.toggle_column_config, background="white", color=TEXT, border=f"1px solid {BORDER}", padding="0 12px"), position="relative"),

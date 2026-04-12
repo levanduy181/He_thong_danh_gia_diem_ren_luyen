@@ -23,8 +23,8 @@ def login_page() -> rx.Component:
                     rx.text(
                         rx.cond(
                             ConductState.auth_mode == "login",
-                            "Nhập tài khoản của bạn; hệ thống nhận diện vai trò theo dữ liệu tài khoản.",
-                            "Tài khoản mới mặc định có quyền Sinh viên. Admin có thể cấp mọi quyền; cố vấn chỉ cấp Ban cán sự cho sinh viên.",
+                            "",
+                            "",
                         ),
                         font_size="14px",
                         color=MUTED,
@@ -174,31 +174,6 @@ def login_page() -> rx.Component:
                         align="stretch",
                         width="100%",
                     ),
-                ),
-                rx.vstack(
-                    rx.cond(
-                        ConductState.auth_mode == "login",
-                        rx.box(
-                            rx.vstack(
-                                rx.text("Tài khoản mặc định", font_size="13px", color=TEXT, font_weight="700"),
-                                rx.text("Admin: admin / admin123", font_size="12px", color=MUTED),
-                                rx.text("Cố vấn D23CQAT01: CVHT001 / CVHT001", font_size="12px", color=MUTED),
-                                rx.text("Cố vấn D23CQAT02: CVHT002 / CVHT002", font_size="12px", color=MUTED),
-                                rx.text("Cố vấn D23CQCN01: CVHT003 / CVHT003", font_size="12px", color=MUTED),
-                                rx.text("Cố vấn D23CQCN02: CVHT004 / CVHT004", font_size="12px", color=MUTED),
-                                rx.text("Sinh viên mẫu: B23DCAT001 / B23DCAT001", font_size="12px", color=MUTED),
-                                spacing="1",
-                                align="start",
-                            ),
-                            width="100%",
-                            padding="14px 16px",
-                            border=f"1px solid {BORDER}",
-                            border_radius="10px",
-                            background=SURFACE,
-                        ),
-                        rx.fragment(),
-                    ),
-                    width="100%",
                 ),
                 spacing="6",
                 align="center",

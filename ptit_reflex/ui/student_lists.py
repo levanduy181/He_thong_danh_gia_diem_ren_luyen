@@ -130,11 +130,6 @@ def students_list_page() -> rx.Component:
 def score_review_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Duyệt phiếu điểm rèn luyện", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Danh sách dưới đây dành cho ban cán sự. Mở phiếu để xem, chỉnh điểm và chỉ duyệt trong màn phiếu khi đúng thời gian ban cán sự đánh giá.",
-            font_size="14px",
-            color=MUTED,
-        ),
         _review_filters_row(),
         rx.vstack(
             rx.foreach(
@@ -208,11 +203,6 @@ def score_review_list_page() -> rx.Component:
 def evidence_review_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Duyệt minh chứng", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Chọn từng sinh viên để mở lại màn hình duyệt minh chứng hiện có. Danh sách vẫn hiển thị số minh chứng đang chờ ban cán sự xử lý.",
-            font_size="14px",
-            color=MUTED,
-        ),
         _review_filters_row(),
         rx.vstack(
             rx.foreach(
@@ -274,11 +264,6 @@ def evidence_review_list_page() -> rx.Component:
 def events_review_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Duyệt sự kiện", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Chọn từng sinh viên để mở danh sách sự kiện đã đăng ký và duyệt các đăng ký đang chờ xử lý.",
-            font_size="14px",
-            color=MUTED,
-        ),
         _review_filters_row(),
         rx.vstack(
             rx.foreach(
