@@ -22,7 +22,25 @@ function Try-CreateVenv {
         Remove-Item ".venv" -Recurse -Force
     }
 
-    & $Command @Arguments 2>$null
+    $nativePrefExists = $null -ne (Get-Variable PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue)
+    if ($nativePrefExists) {
+        $previousNativePref = $PSNativeCommandUseErrorActionPreference
+        $script:PSNativeCommandUseErrorActionPreference = $false
+    }
+
+    try {
+        & $Command @Arguments *> $null
+        if ($LASTEXITCODE -ne 0) {
+            return $false
+        }
+    } catch {
+        return $false
+    } finally {
+        if ($nativePrefExists) {
+            $script:PSNativeCommandUseErrorActionPreference = $previousNativePref
+        }
+    }
+
     return Test-Path ".venv\Scripts\python.exe"
 }
 
