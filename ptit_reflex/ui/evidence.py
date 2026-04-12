@@ -407,6 +407,7 @@ def evidence_detail_modal() -> rx.Component:
 
 
 def evidence_page() -> rx.Component:
+    show_embedded_semester_select = ConductState.active_tab != "students_evidence"
     return rx.vstack(
         rx.cond(
             ConductState.active_tab == "students_evidence",
@@ -438,16 +439,29 @@ def evidence_page() -> rx.Component:
                             rx.text(ConductState.selected_student_name, font_size="13px", color=MUTED),
                             rx.text("•", font_size="13px", color=MUTED),
                             rx.text(ConductState.selected_student_class, font_size="13px", color=MUTED),
+                            rx.text("•", font_size="13px", color=MUTED),
+                            rx.text(ConductState.selected_semester_name, font_size="13px", color="#1d4ed8", font_weight="600"),
                             spacing="2",
                             align="center",
+                            flex_wrap="wrap",
                         ),
                         spacing="0",
                         align="start",
                     ),
-                    rx.select(ConductState.semester_names, value=ConductState.selected_semester_name, on_change=ConductState.select_semester_by_name, width="320px"),
+                    rx.cond(
+                        show_embedded_semester_select,
+                        rx.select(
+                            ConductState.semester_names,
+                            value=ConductState.selected_semester_name,
+                            on_change=ConductState.select_semester_by_name,
+                            width="320px",
+                        ),
+                        rx.fragment(),
+                    ),
                     justify="between",
                     align="center",
                     width="100%",
+                    flex_wrap="wrap",
                 ),
                 padding="16px 18px",
                 border_bottom=f"1px solid {BORDER}",

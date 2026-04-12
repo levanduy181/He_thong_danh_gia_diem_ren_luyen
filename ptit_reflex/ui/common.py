@@ -14,10 +14,12 @@ def action_button(
     border: str = "none",
     height: str = "38px",
     padding: str = "0 16px",
+    disabled=False,
 ) -> rx.Component:
     return rx.button(
         label,
         on_click=on_click,
+        disabled=disabled,
         background=background,
         color=color,
         border=border,
@@ -26,7 +28,8 @@ def action_button(
         padding=padding,
         font_weight="600",
         font_size="14px",
-        cursor="pointer",
+        cursor=rx.cond(disabled, "not-allowed", "pointer"),
+        opacity=rx.cond(disabled, 0.55, 1),
         box_shadow="none",
     )
 
@@ -89,6 +92,8 @@ def flash_banner() -> rx.Component:
             background=background,
             border=f"1px solid {BORDER}",
             border_radius="10px",
+            on_mount=ConductState.schedule_flash_auto_clear,
+            key=ConductState.flash_token,
         ),
         rx.fragment(),
     )
@@ -201,7 +206,12 @@ def sidebar_nav_item(label, tab_key: str) -> rx.Component:
 
 
 def sidebar_nav_sub_item(label: str, tab_key: str) -> rx.Component:
-    active = ConductState.active_tab == tab_key
+    active = (
+        (ConductState.active_tab == tab_key)
+        | ((tab_key == "students_score_list") & (ConductState.active_tab == "students_score"))
+        | ((tab_key == "students_evidence_list") & (ConductState.active_tab == "students_evidence"))
+        | ((tab_key == "students_events_list") & (ConductState.active_tab == "students_events"))
+    )
     return rx.box(
         rx.text(
             label,
@@ -224,7 +234,7 @@ def sidebar_students_group() -> rx.Component:
         rx.hstack(
             rx.box(
                 rx.text(
-                    "Danh sách sinh viên",
+                    ConductState.student_directory_sidebar_label,
                     font_size="14px",
                     font_weight=rx.cond(ConductState.nav_students_parent_active, "700", "600"),
                     color=rx.cond(ConductState.nav_students_parent_active, "white", "#374151"),
@@ -248,13 +258,26 @@ def sidebar_students_group() -> rx.Component:
         ),
         rx.cond(
             ConductState.nav_students_open,
-            rx.vstack(
-                rx.cond(ConductState.show_students_score_tab, sidebar_nav_sub_item("Phiếu điểm rèn luyện", "students_score"), rx.fragment()),
-                rx.cond(ConductState.show_students_evidence_tab, sidebar_nav_sub_item("Duyệt minh chứng", "students_evidence"), rx.fragment()),
-                spacing="2",
-                width="100%",
-                align="stretch",
-                padding_bottom="4px",
+            rx.cond(
+                ConductState.current_user_role == "class_monitor",
+                rx.vstack(
+                    sidebar_nav_sub_item("Duyệt phiếu điểm rèn luyện", "students_score_list"),
+                    sidebar_nav_sub_item("Duyệt minh chứng", "students_evidence_list"),
+                    sidebar_nav_sub_item("Duyệt sự kiện", "students_events_list"),
+                    spacing="2",
+                    width="100%",
+                    align="stretch",
+                    padding_bottom="4px",
+                ),
+                rx.vstack(
+                    rx.cond(ConductState.show_students_score_tab, sidebar_nav_sub_item("Phiếu điểm rèn luyện", "students_score"), rx.fragment()),
+                    rx.cond(ConductState.show_students_evidence_tab, sidebar_nav_sub_item("Duyệt minh chứng", "students_evidence"), rx.fragment()),
+                    rx.cond(ConductState.show_students_events_tab, sidebar_nav_sub_item("Duyệt sự kiện", "students_events"), rx.fragment()),
+                    spacing="2",
+                    width="100%",
+                    align="stretch",
+                    padding_bottom="4px",
+                ),
             ),
             rx.fragment(),
         ),
@@ -268,7 +291,7 @@ def sidebar_nav() -> rx.Component:
     return rx.vstack(
         rx.text("Menu", font_size="11px", font_weight="700", color=MUTED, letter_spacing="0.06em", text_transform="uppercase", padding="4px 14px 8px"),
         sidebar_nav_item(ConductState.main_info_sidebar_label, "student_info"),
-        rx.cond(ConductState.show_role_management_tab, sidebar_nav_item("Phân quyền tài khoản", "role_management"), rx.fragment()),
+        rx.cond(ConductState.show_role_management_tab, sidebar_nav_item("Quản lý tài khoản", "role_management"), rx.fragment()),
         rx.cond(
             ConductState.current_user_role == "admin",
             sidebar_nav_item("Mốc thời gian đánh giá", "admin_conduct_timeline"),
@@ -311,26 +334,63 @@ def sidebar() -> rx.Component:
     )
 
 
+def _student_filter_input() -> rx.Component:
+    return rx.input(
+        placeholder="Lọc theo tên, mã SV, điểm hoặc xếp loại…",
+        value=ConductState.student_list_filter,
+        on_change=ConductState.set_student_list_filter,
+        width="100%",
+        max_width="520px",
+        height="40px",
+        border=f"1px solid {BORDER}",
+        border_radius="8px",
+        padding_left="12px",
+        padding_right="12px",
+    )
+
+
+def _review_semester_select() -> rx.Component:
+    return rx.select(
+        ConductState.semester_names,
+        value=ConductState.selected_semester_name,
+        on_change=ConductState.select_semester_by_name,
+        width="280px",
+        min_width="240px",
+        max_width="280px",
+        height="40px",
+        border=f"1px solid {PRIMARY}",
+        border_radius="10px",
+        background="white",
+        color=TEXT,
+        font_size="14px",
+        font_weight="500",
+        padding_left="12px",
+        padding_right="12px",
+        flex_shrink="0",
+    )
+
+
+def _review_filters_row() -> rx.Component:
+    return rx.hstack(
+        rx.box(_student_filter_input(), flex="1", min_width="280px"),
+        _review_semester_select(),
+        width="100%",
+        align="center",
+        justify="between",
+        spacing="3",
+        flex_wrap="wrap",
+    )
+
+
 def students_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Danh sách sinh viên", font_size="22px", font_weight="700", color=TEXT),
         rx.text(
-            "Nhấn vào tên sinh viên để xem thông tin chi tiết; dùng nút bên phải để mở phiếu điểm rèn luyện.",
+            "Nhấn vào tên sinh viên để xem thông tin chi tiết; dùng nút bên phải để nhập GPA theo học kỳ cho từng sinh viên trong lớp.",
             font_size="14px",
             color=MUTED,
         ),
-        rx.input(
-            placeholder="Lọc theo tên, mã SV, điểm hoặc xếp loại…",
-            value=ConductState.student_list_filter,
-            on_change=ConductState.set_student_list_filter,
-            width="100%",
-            max_width="520px",
-            height="40px",
-            border=f"1px solid {BORDER}",
-            border_radius="8px",
-            padding_left="12px",
-            padding_right="12px",
-        ),
+        _review_filters_row(),
         rx.vstack(
             rx.foreach(
                 ConductState.filtered_students,
@@ -353,8 +413,8 @@ def students_list_page() -> rx.Component:
                         rx.hstack(
                             rx.box(
                                 rx.hstack(
-                                    rx.text("Điểm:", font_size="12px", font_weight="700", color="#92400e"),
-                                    rx.text(row["score_total"], font_size="12px", font_weight="700", color="#92400e"),
+                                    rx.text("GPA:", font_size="12px", font_weight="700", color="#92400e"),
+                                    rx.text(row["gpa"], font_size="12px", font_weight="700", color="#92400e"),
                                     spacing="1",
                                     align="center",
                                 ),
@@ -363,8 +423,8 @@ def students_list_page() -> rx.Component:
                                 padding="6px 12px",
                             ),
                             action_button(
-                                "Xem phiếu điểm",
-                                ConductState.pick_student_open_score(row["label"]),
+                                "Nhập GPA",
+                                ConductState.pick_student_open_gpa(row["label"]),
                                 background="white",
                                 color=TEXT,
                                 border=f"1px solid {BORDER}",
@@ -385,6 +445,318 @@ def students_list_page() -> rx.Component:
                     background="white",
                     width="100%",
                     _hover={"background": "#f9fafb"},
+                    key=row["id"],
+                ),
+            ),
+            width="100%",
+            spacing="3",
+            align="stretch",
+        ),
+        width="100%",
+        align="stretch",
+        spacing="4",
+    )
+
+
+def advisor_gpa_page() -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.vstack(
+                rx.text("Nhập GPA", font_size="22px", font_weight="700", color=TEXT),
+                rx.text(
+                    "Cố vấn học tập nhập GPA theo học kỳ. GPA này được dùng để tự tính tiêu chí kết quả học tập trong phiếu rèn luyện.",
+                    font_size="14px",
+                    color=MUTED,
+                    line_height="1.7",
+                ),
+                spacing="2",
+                align="start",
+            ),
+            action_button(
+                "Quay lại danh sách",
+                ConductState.select_tab("students"),
+                background="white",
+                color=TEXT,
+                border=f"1px solid {BORDER}",
+            ),
+            width="100%",
+            justify="between",
+            align="start",
+            flex_wrap="wrap",
+            spacing="3",
+        ),
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.vstack(
+                        rx.text(ConductState.selected_student_name, font_size="18px", font_weight="800", color=TEXT),
+                        rx.hstack(
+                            rx.text(ConductState.selected_student_code, font_size="13px", color=MUTED),
+                            rx.text("•", font_size="13px", color=MUTED),
+                            rx.text(ConductState.selected_student_class, font_size="13px", color=MUTED),
+                            spacing="2",
+                            align="center",
+                            flex_wrap="wrap",
+                        ),
+                        spacing="1",
+                        align="start",
+                    ),
+                    _review_semester_select(),
+                    width="100%",
+                    justify="between",
+                    align="start",
+                    flex_wrap="wrap",
+                    spacing="3",
+                ),
+                rx.box(
+                    form_label("GPA học kỳ", required=True),
+                    form_input(
+                        ConductState.advisor_gpa_input,
+                        "Ví dụ: 3.25",
+                        ConductState.set_advisor_gpa_input,
+                        input_type="number",
+                    ),
+                    rx.text("Nhập theo thang 4.0, ví dụ 3.0, 3.25, 3.6.", font_size="12px", color=MUTED),
+                    width="100%",
+                    max_width="360px",
+                ),
+                rx.hstack(
+                    action_button("Lưu GPA", ConductState.save_advisor_gpa),
+                    rx.box(
+                        rx.hstack(
+                            rx.text("GPA hiện tại:", font_size="12px", font_weight="700", color="#1d4ed8"),
+                            rx.text(ConductState.advisor_gpa_input, font_size="12px", font_weight="700", color="#1d4ed8"),
+                            spacing="1",
+                            align="center",
+                        ),
+                        padding="6px 12px",
+                        border_radius="999px",
+                        background="#eef2ff",
+                    ),
+                    spacing="3",
+                    align="center",
+                    flex_wrap="wrap",
+                ),
+                width="100%",
+                spacing="4",
+                align="stretch",
+            ),
+            width="100%",
+            background="white",
+            border=f"1px solid {BORDER}",
+            border_radius="12px",
+            padding="22px",
+        ),
+        width="100%",
+        align="stretch",
+        spacing="4",
+    )
+
+
+def score_review_list_page() -> rx.Component:
+    return rx.vstack(
+        rx.text("Duyệt phiếu điểm rèn luyện", font_size="22px", font_weight="700", color=TEXT),
+        rx.text(
+            "Danh sách dưới đây dành cho ban cán sự. Mở phiếu để xem, chỉnh điểm và chỉ duyệt trong màn phiếu khi đúng thời gian ban cán sự đánh giá.",
+            font_size="14px",
+            color=MUTED,
+        ),
+        _review_filters_row(),
+        rx.vstack(
+            rx.foreach(
+                ConductState.filtered_students,
+                lambda row: rx.box(
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(row["full_name"], font_size="16px", font_weight="700", color=TEXT),
+                            rx.hstack(
+                                rx.text(row["student_code"], font_size="13px", color=MUTED),
+                                rx.text("•", font_size="13px", color=MUTED),
+                                rx.text(row["class_name"], font_size="13px", color=MUTED),
+                                spacing="2",
+                                align="center",
+                                flex_wrap="wrap",
+                            ),
+                            rx.hstack(
+                                badge(row["score_status_label"], "#eef2ff", color="#1d4ed8"),
+                                badge(row["conduct_grade"], "#f0fdf4", color="#166534"),
+                                spacing="2",
+                                align="center",
+                                flex_wrap="wrap",
+                            ),
+                            spacing="2",
+                            align="start",
+                            min_width="0",
+                        ),
+                        rx.hstack(
+                            rx.box(
+                                rx.hstack(
+                                    rx.text("Điểm:", font_size="12px", font_weight="700", color="#92400e"),
+                                    rx.text(row["score_total"], font_size="12px", font_weight="700", color="#92400e"),
+                                    spacing="1",
+                                    align="center",
+                                ),
+                                background="#fffbeb",
+                                border_radius="999px",
+                                padding="6px 12px",
+                            ),
+                            action_button(
+                                "Xem phiếu điểm rèn luyện",
+                                ConductState.pick_student_open_score(row["label"]),
+                                background="white",
+                                color=TEXT,
+                                border=f"1px solid {BORDER}",
+                            ),
+                            spacing="3",
+                            align="center",
+                            justify="end",
+                            flex_wrap="wrap",
+                        ),
+                        justify="between",
+                        align="center",
+                        width="100%",
+                        flex_wrap="wrap",
+                        spacing="4",
+                    ),
+                    padding="18px",
+                    border=f"1px solid {BORDER}",
+                    border_radius="12px",
+                    background="white",
+                    width="100%",
+                    _hover={"background": "#f9fafb"},
+                    key=row["id"],
+                ),
+            ),
+            width="100%",
+            spacing="3",
+            align="stretch",
+        ),
+        width="100%",
+        align="stretch",
+        spacing="4",
+    )
+
+
+def evidence_review_list_page() -> rx.Component:
+    return rx.vstack(
+        rx.text("Duyệt minh chứng", font_size="22px", font_weight="700", color=TEXT),
+        rx.text(
+            "Chọn từng sinh viên để mở lại màn hình duyệt minh chứng hiện có. Danh sách vẫn hiển thị số minh chứng đang chờ ban cán sự xử lý.",
+            font_size="14px",
+            color=MUTED,
+        ),
+        _review_filters_row(),
+        rx.vstack(
+            rx.foreach(
+                ConductState.filtered_students,
+                lambda row: rx.box(
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(row["full_name"], font_size="16px", font_weight="700", color=TEXT),
+                            rx.hstack(
+                                rx.text(row["student_code"], font_size="13px", color=MUTED),
+                                rx.text("•", font_size="13px", color=MUTED),
+                                rx.text(row["class_name"], font_size="13px", color=MUTED),
+                                spacing="2",
+                                align="center",
+                                flex_wrap="wrap",
+                            ),
+                            rx.hstack(
+                                rx.text("Minh chứng chờ duyệt:", font_size="13px", font_weight="600", color="#9a3412"),
+                                rx.text(row["pending_evidence_count"], font_size="13px", font_weight="700", color="#9a3412"),
+                                spacing="2",
+                                align="center",
+                            ),
+                            spacing="2",
+                            align="start",
+                            min_width="0",
+                        ),
+                        action_button(
+                            "Mở duyệt minh chứng",
+                            ConductState.pick_student_open_evidence(row["label"]),
+                            background="white",
+                            color=TEXT,
+                            border=f"1px solid {BORDER}",
+                        ),
+                        justify="between",
+                        align="center",
+                        width="100%",
+                        flex_wrap="wrap",
+                        spacing="4",
+                    ),
+                    padding="18px",
+                    border=f"1px solid {BORDER}",
+                    border_radius="12px",
+                    background="white",
+                    width="100%",
+                    _hover={"background": "#f9fafb"},
+                    key=row["id"],
+                ),
+            ),
+            width="100%",
+            spacing="3",
+            align="stretch",
+        ),
+        width="100%",
+        align="stretch",
+        spacing="4",
+    )
+
+
+def events_review_list_page() -> rx.Component:
+    return rx.vstack(
+        rx.text("Duyệt sự kiện", font_size="22px", font_weight="700", color=TEXT),
+        rx.text(
+            "Chọn từng sinh viên để mở danh sách sự kiện đã đăng ký và duyệt các đăng ký đang chờ xử lý.",
+            font_size="14px",
+            color=MUTED,
+        ),
+        _review_filters_row(),
+        rx.vstack(
+            rx.foreach(
+                ConductState.filtered_students,
+                lambda row: rx.box(
+                    rx.hstack(
+                        rx.vstack(
+                            rx.text(row["full_name"], font_size="16px", font_weight="700", color=TEXT),
+                            rx.hstack(
+                                rx.text(row["student_code"], font_size="13px", color=MUTED),
+                                rx.text("•", font_size="13px", color=MUTED),
+                                rx.text(row["class_name"], font_size="13px", color=MUTED),
+                                spacing="2",
+                                align="center",
+                                flex_wrap="wrap",
+                            ),
+                            rx.hstack(
+                                rx.text("Sự kiện chờ duyệt:", font_size="13px", font_weight="600", color="#9a3412"),
+                                rx.text(row["pending_event_count"], font_size="13px", font_weight="700", color="#9a3412"),
+                                spacing="2",
+                                align="center",
+                            ),
+                            spacing="2",
+                            align="start",
+                            min_width="0",
+                        ),
+                        action_button(
+                            "Mở duyệt sự kiện",
+                            ConductState.pick_student_open_events(row["label"]),
+                            background="white",
+                            color=TEXT,
+                            border=f"1px solid {BORDER}",
+                        ),
+                        justify="between",
+                        align="center",
+                        width="100%",
+                        flex_wrap="wrap",
+                        spacing="4",
+                    ),
+                    padding="18px",
+                    border=f"1px solid {BORDER}",
+                    border_radius="12px",
+                    background="white",
+                    width="100%",
+                    _hover={"background": "#f9fafb"},
+                    key=row["id"],
                 ),
             ),
             width="100%",
@@ -449,6 +821,16 @@ def profile_item(label: str, value) -> rx.Component:
         spacing="1",
         align="start",
         min_width="180px",
+        width="100%",
+    )
+
+
+def profile_edit_field(label: str, field) -> rx.Component:
+    return rx.vstack(
+        rx.text(label, font_size="12px", color=MUTED, font_weight="700", text_transform="uppercase"),
+        field,
+        spacing="2",
+        align="stretch",
         width="100%",
     )
 
@@ -528,6 +910,142 @@ def _advisor_info_card() -> rx.Component:
 
 
 def _student_profile_card() -> rx.Component:
+    action_area = rx.cond(
+        ConductState.can_edit_own_profile,
+        rx.cond(
+            ConductState.profile_editing,
+            rx.hstack(
+                action_button(
+                    "Hủy",
+                    ConductState.cancel_profile_edit,
+                    background="white",
+                    color=TEXT,
+                    border=f"1px solid {BORDER}",
+                ),
+                action_button("Lưu thông tin", ConductState.save_profile),
+                spacing="2",
+                align="center",
+                flex_wrap="wrap",
+            ),
+            action_button(
+                "Sửa thông tin",
+                ConductState.start_profile_edit,
+                background="white",
+                color=TEXT,
+                border=f"1px solid {BORDER}",
+            ),
+        ),
+        rx.fragment(),
+    )
+    display_content = rx.vstack(
+        rx.grid(
+            profile_item("Mã sinh viên", ConductState.student_profile["student_code"]),
+            profile_item("Họ tên", ConductState.student_profile["full_name"]),
+            profile_item("Lớp", ConductState.student_profile["class_name"]),
+            profile_item("Khoa", ConductState.student_profile["faculty"]),
+            profile_item("Ngành", ConductState.student_profile["major"]),
+            profile_item("Thông tin giảng viên", ConductState.student_profile["advisor_name"]),
+            profile_item("Ban cán sự", ConductState.student_profile["class_monitor_name"]),
+            profile_item("Email", ConductState.student_profile["email"]),
+            profile_item("Số điện thoại", ConductState.student_profile["phone"]),
+            profile_item("Ngày sinh", ConductState.student_profile["birth_date"]),
+            profile_item("Giới tính", ConductState.student_profile["gender"]),
+            profile_item("Trạng thái", ConductState.student_profile["status"]),
+            columns="3",
+            spacing="5",
+            width="100%",
+        ),
+        rx.vstack(
+            rx.text("Địa chỉ", font_size="12px", color=MUTED, font_weight="700", text_transform="uppercase"),
+            rx.box(
+                rx.text(ConductState.student_profile["address"], font_size="14px", color="#374151", line_height="1.7"),
+                width="100%",
+                padding="14px 16px",
+                background=SURFACE,
+                border=f"1px solid {BORDER}",
+                border_radius="10px",
+            ),
+            spacing="2",
+            align="stretch",
+            width="100%",
+        ),
+        spacing="4",
+        align="stretch",
+        width="100%",
+    )
+    edit_content = rx.vstack(
+        rx.grid(
+            profile_edit_field(
+                "Họ tên",
+                form_input(
+                    ConductState.profile_edit_full_name,
+                    "Nhập họ tên",
+                    ConductState.set_profile_field("profile_edit_full_name"),
+                ),
+            ),
+            profile_edit_field(
+                "Email",
+                form_input(
+                    ConductState.profile_edit_email,
+                    "Nhập email",
+                    ConductState.set_profile_field("profile_edit_email"),
+                    input_type="email",
+                ),
+            ),
+            profile_edit_field(
+                "Số điện thoại",
+                form_input(
+                    ConductState.profile_edit_phone,
+                    "Nhập số điện thoại",
+                    ConductState.set_profile_field("profile_edit_phone"),
+                ),
+            ),
+            profile_edit_field(
+                "Ngày sinh",
+                form_input(
+                    ConductState.profile_edit_birth_date,
+                    "Chọn ngày sinh",
+                    ConductState.set_profile_field("profile_edit_birth_date"),
+                    input_type="date",
+                ),
+            ),
+            profile_edit_field(
+                "Giới tính",
+                rx.select(
+                    ConductState.register_gender_options,
+                    value=ConductState.profile_edit_gender,
+                    on_change=ConductState.set_profile_field("profile_edit_gender"),
+                    width="100%",
+                    height="48px",
+                    border=f"1px solid {BORDER}",
+                    border_radius="8px",
+                    background="white",
+                    color=TEXT,
+                ),
+            ),
+            profile_item("Mã sinh viên", ConductState.student_profile["student_code"]),
+            profile_item("Lớp", ConductState.student_profile["class_name"]),
+            profile_item("Khoa", ConductState.student_profile["faculty"]),
+            profile_item("Ngành", ConductState.student_profile["major"]),
+            profile_item("Thông tin giảng viên", ConductState.student_profile["advisor_name"]),
+            profile_item("Ban cán sự", ConductState.student_profile["class_monitor_name"]),
+            profile_item("Trạng thái", ConductState.student_profile["status"]),
+            columns="3",
+            spacing="5",
+            width="100%",
+        ),
+        profile_edit_field(
+            "Địa chỉ",
+            form_text_area(
+                ConductState.profile_edit_address,
+                "Nhập địa chỉ hiện tại",
+                ConductState.set_profile_field("profile_edit_address"),
+            ),
+        ),
+        spacing="4",
+        align="stretch",
+        width="100%",
+    )
     return rx.box(
         rx.vstack(
             rx.hstack(
@@ -545,12 +1063,7 @@ def _student_profile_card() -> rx.Component:
                         border_radius="999px",
                         padding="6px 12px",
                     ),
-                    rx.box(
-                        rx.hstack(rx.text("CPA", font_size="12px", font_weight="700", color="#047857"), rx.text(ConductState.student_profile["cpa"], font_size="12px", font_weight="700", color="#047857"), spacing="1", align="center"),
-                        background="#ecfdf5",
-                        border_radius="999px",
-                        padding="6px 12px",
-                    ),
+                    action_area,
                     spacing="2",
                     align="center",
                     flex_wrap="wrap",
@@ -560,36 +1073,10 @@ def _student_profile_card() -> rx.Component:
                 width="100%",
                 flex_wrap="wrap",
             ),
-            rx.grid(
-                profile_item("Mã sinh viên", ConductState.student_profile["student_code"]),
-                profile_item("Họ tên", ConductState.student_profile["full_name"]),
-                profile_item("Lớp", ConductState.student_profile["class_name"]),
-                profile_item("Thông tin giảng viên", ConductState.student_profile["advisor_name"]),
-                profile_item("Ban cán sự", ConductState.student_profile["class_monitor_name"]),
-                profile_item("Ngành", ConductState.student_profile["major"]),
-                profile_item("Email", ConductState.student_profile["email"]),
-                profile_item("Số điện thoại", ConductState.student_profile["phone"]),
-                profile_item("Ngày sinh", ConductState.student_profile["birth_date"]),
-                profile_item("Giới tính", ConductState.student_profile["gender"]),
-                profile_item("Trạng thái", ConductState.student_profile["status"]),
-                profile_item("Tín chỉ học kỳ", ConductState.student_profile["credits"]),
-                columns="3",
-                spacing="5",
-                width="100%",
-            ),
-            rx.vstack(
-                rx.text("Địa chỉ", font_size="12px", color=MUTED, font_weight="700", text_transform="uppercase"),
-                rx.box(
-                    rx.text(ConductState.student_profile["address"], font_size="14px", color="#374151", line_height="1.7"),
-                    width="100%",
-                    padding="14px 16px",
-                    background=SURFACE,
-                    border=f"1px solid {BORDER}",
-                    border_radius="10px",
-                ),
-                spacing="2",
-                align="stretch",
-                width="100%",
+            rx.cond(
+                ConductState.profile_editing,
+                rx.cond(ConductState.can_edit_own_profile, edit_content, display_content),
+                display_content,
             ),
             spacing="4",
             align="stretch",
@@ -701,23 +1188,66 @@ def login_page() -> rx.Component:
                             "Ví dụ: tenban@stu.ptit.edu.vn",
                             ConductState.set_register_field("register_email"),
                         ),
+                        form_label("Số điện thoại", required=True),
+                        form_input(
+                            ConductState.register_phone,
+                            "Nhập số điện thoại",
+                            ConductState.set_register_field("register_phone"),
+                        ),
+                        form_label("Ngày sinh", required=True),
+                        form_input(
+                            ConductState.register_birth_date,
+                            "Chọn ngày sinh",
+                            ConductState.set_register_field("register_birth_date"),
+                            input_type="date",
+                        ),
+                        form_label("Giới tính", required=True),
+                        rx.select(
+                            ConductState.register_gender_options,
+                            value=ConductState.register_gender,
+                            on_change=ConductState.set_register_field("register_gender"),
+                            width="100%",
+                            height="48px",
+                            border=f"1px solid {BORDER}",
+                            border_radius="8px",
+                            background="white",
+                            color=TEXT,
+                        ),
                         form_label("Lớp", required=True),
                         form_input(
                             ConductState.register_class_name,
                             "Ví dụ: D23CQAT04-B",
                             ConductState.set_register_field("register_class_name"),
                         ),
-                        form_label("Khoa/Đơn vị"),
-                        form_input(
-                            ConductState.register_faculty,
-                            "Để trống nếu dùng mặc định theo lớp",
-                            ConductState.set_register_field("register_faculty"),
+                        form_label("Khoa", required=True),
+                        rx.select(
+                            ConductState.register_faculty_options,
+                            value=ConductState.register_faculty,
+                            on_change=ConductState.set_register_faculty,
+                            width="100%",
+                            height="48px",
+                            border=f"1px solid {BORDER}",
+                            border_radius="8px",
+                            background="white",
+                            color=TEXT,
                         ),
-                        form_label("Ngành"),
-                        form_input(
-                            ConductState.register_major,
-                            "Để trống nếu dùng mặc định theo lớp",
-                            ConductState.set_register_field("register_major"),
+                        form_label("Ngành", required=True),
+                        rx.select(
+                            ConductState.register_major_options,
+                            value=ConductState.register_major,
+                            on_change=ConductState.set_register_field("register_major"),
+                            width="100%",
+                            height="48px",
+                            border=f"1px solid {BORDER}",
+                            border_radius="8px",
+                            background="white",
+                            color=TEXT,
+                        ),
+                        form_label("Địa chỉ", required=True),
+                        form_text_area(
+                            ConductState.register_address,
+                            "Nhập địa chỉ hiện tại",
+                            ConductState.set_register_field("register_address"),
                         ),
                         form_label("Mật khẩu", required=True),
                         form_input(

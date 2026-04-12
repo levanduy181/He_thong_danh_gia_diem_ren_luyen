@@ -9,12 +9,12 @@ from ptit_reflex.models import Criterion, CriterionGroup, ScoreEntry, Semester, 
 CRITERION_BLUEPRINT = [
     {
         "title": "Tieu chi 1. Danh gia ve y thuc tham gia hoc tap",
-        "max_points": 20,
+        "max_points": 23,
         "criteria": [
             ("Y thuc va thai do trong hoc tap", "Sinh vien nghiem tuc, tich cuc trong hoc tap", 0.0, 3.0),
             ("Ket qua hoc tap trong ky hoc", "Diem tich luy hoc tap", 0.0, 10.0),
             ("Y thuc chap hanh tot noi quy ve cac ky thi", "Khong vi pham quy che thi", -4.0, 4.0),
-            ("Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo", "", 0.0, 2.0),
+            ("Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo", "", 0.0, 5.0),
             ("Tinh than vuot kho, phan dau vuon len trong hoc tap", "Co DTBCTL hoc ky sau lon hon hoc ky truoc; doi voi sinh vien nam 1 thi khong co diem duoi 2.5", 0.0, 1.0),
         ],
     },
@@ -53,10 +53,9 @@ CRITERION_BLUEPRINT = [
     },
     {
         "title": "Tieu chi 5. Danh gia ve y thuc va tham gia phu trach lop, cac doan the trong truong, thanh tich dac biet",
-        "max_points": 10,
+        "max_points": 7,
         "criteria": [
             ("Lop truong, lop pho, bi thu, BCH doan, chu nhiem cau lac bo...", "", 0.0, 4.0),
-            ("Thanh vien tham gia cac Cau lac bo duoc ghi nhan hoan thanh nhiem vu...", "", 0.0, 3.0),
             ("Sinh vien dat thanh tich dac biet trong hoc tap, ren luyen", "", 0.0, 3.0),
         ],
     },
@@ -274,24 +273,32 @@ def seed_default_data(session: Session) -> None:
 
     if not session.scalar(select(func.count()).select_from(Event)):
         active_semester = session.scalar(select(Semester).where(Semester.is_active.is_(True)))
-        c1 = session.scalar(select(Criterion).where(Criterion.title == "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de"))
-        c2 = session.scalar(select(Criterion).where(Criterion.title == "Tuyen truyen tich cuc hinh anh ve Truong/Khoa tren mang xa hoi"))
-        if active_semester and c1 and c2:
+        c1 = session.scalar(select(Criterion).where(Criterion.title == "Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo"))
+        c2 = session.scalar(select(Criterion).where(Criterion.title == "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc"))
+        c3 = session.scalar(select(Criterion).where(Criterion.title == "Thuc hien nghiem tuc cac buoi hop lop/ sinh hoat doan the do Hoc vien/Khoa/Vien, CVHT, Lop/Chi doan to chuc"))
+        if active_semester and c1 and c2 and c3:
             session.add_all([
                 Event(
                     semester_id=active_semester.id,
                     criterion_id=c1.id,
-                    name="Chien dich Mua he Xanh 2026",
-                    points=5.0,
-                    qr_code="QR-MHX2026",
+                    name="Seminar nghiên cứu khoa học ATTT 2026",
+                    points=2.0,
+                    qr_code="QR-TS2026",
                 ),
                 Event(
                     semester_id=active_semester.id,
                     criterion_id=c2.id,
-                    name="Truyen thong tuyen sinh PTIT 2026",
-                    points=3.0,
-                    qr_code="QR-TS2026",
-                )
+                    name="Ngày hội việc làm Cyber Security 2026",
+                    points=1.0,
+                    qr_code="QR-JOBFAIR2026",
+                ),
+                Event(
+                    semester_id=active_semester.id,
+                    criterion_id=c3.id,
+                    name="Sinh hoạt lớp đầu học kỳ 2026",
+                    points=1.0,
+                    qr_code="QR-MHX2026",
+                ),
             ])
 
     # Seed du lieu lich su cho cac ky truoc

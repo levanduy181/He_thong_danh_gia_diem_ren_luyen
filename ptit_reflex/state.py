@@ -1,33 +1,44 @@
 from __future__ import annotations
 
+import asyncio
+
 import reflex as rx
 
 from ptit_reflex.data import (
     CATEGORY_LABELS,
+    REGISTER_FACULTY_OPTIONS,
+    REGISTER_GENDER_OPTIONS,
+    REGISTER_MAJOR_OPTIONS_BY_FACULTY,
+    ROLE_LABELS,
     approve_registered_event,
     authenticate_user,
     build_snapshot,
     create_admin_event,
     create_evidence,
+    delete_user_account,
     delete_evidence,
     export_conduct_pdf_bytes,
     load_evidence_detail,
     register_user_account,
     register_event_for_student,
     review_evidence,
+    save_student_gpa,
     save_submission_scores,
     update_semester_stage_windows,
+    update_user_profile,
     update_user_role,
 )
 
 
 EVIDENCE_UPLOAD_ID = "evidence_upload"
+ROLE_VALUE_BY_LABEL = {label: value for value, label in ROLE_LABELS.items()}
 
 
 class ConductState(rx.State):
     loading: bool = True
     flash_message: str = ""
     flash_kind: str = "info"
+    flash_token: int = 0
     is_authenticated: bool = False
     auth_mode: str = "login"
     login_username: str = ""
@@ -42,6 +53,10 @@ class ConductState(rx.State):
     register_class_name: str = ""
     register_faculty: str = ""
     register_major: str = ""
+    register_phone: str = ""
+    register_birth_date: str = ""
+    register_gender: str = ""
+    register_address: str = ""
 
     active_tab: str = "student_info"
     event_tab: str = "joined"
@@ -57,6 +72,8 @@ class ConductState(rx.State):
     current_user_class_name: str = ""
     current_user_student_code: str = ""
     role_management_rows: list[dict] = []
+    role_management_classes: list[str] = []
+    selected_role_management_class: str = ""
 
     students: list[dict] = []
     selected_student_id: int = 0
@@ -64,6 +81,7 @@ class ConductState(rx.State):
     selected_student_name: str = ""
     selected_student_code: str = ""
     selected_student_class: str = ""
+    advisor_gpa_input: str = ""
 
     semesters: list[dict] = []
     selected_semester_id: int = 0
@@ -87,6 +105,7 @@ class ConductState(rx.State):
     can_edit_class_note: bool = False
     can_edit_advisor_note: bool = False
     can_save_student: bool = False
+    can_save_class: bool = False
     can_submit_student: bool = False
     can_review_class: bool = False
     can_review_advisor: bool = False
@@ -137,6 +156,13 @@ class ConductState(rx.State):
     evidence_host_phone: str = ""
 
     student_profile: dict = {}
+    profile_editing: bool = False
+    profile_edit_full_name: str = ""
+    profile_edit_email: str = ""
+    profile_edit_phone: str = ""
+    profile_edit_birth_date: str = ""
+    profile_edit_gender: str = ""
+    profile_edit_address: str = ""
     joined_events: list[dict] = []
     registered_events: list[dict] = []
     has_registered_events: bool = False
@@ -144,9 +170,13 @@ class ConductState(rx.State):
     has_open_events: bool = False
     selected_semester_is_active: bool = False
     criterion_choice_labels: list[str] = []
+    criterion_choice_ids: list[int] = []
     admin_new_event_name: str = ""
     admin_new_event_points: str = "1"
     admin_new_event_semester_id: int = 0
+    admin_new_event_start_time: str = ""
+    admin_new_event_end_time: str = ""
+    admin_new_event_location: str = ""
     admin_event_criterion_choice: str = ""
     admin_stage_0_label: str = ""
     admin_stage_0_start: str = ""
@@ -170,14 +200,47 @@ class ConductState(rx.State):
     selected_event_counts_to_score: str = ""
     selected_event_note: str = ""
 
+    def _clamp_score_input(self, value: str, row: dict) -> str:
+        raw_value = "" if value is None else str(value)
+        raw = raw_value.strip().replace(",", ".")
+        if raw == "":
+            return ""
+        try:
+            parsed = float(raw)
+        except ValueError:
+            return raw_value
+        min_points = float(row.get("min_points", 0.0) or 0.0)
+        max_points = float(row.get("max_points_value", 0.0) or 0.0)
+        clamped = max(min_points, min(parsed, max_points))
+        if clamped.is_integer():
+            return str(int(clamped))
+        return f"{clamped:.2f}".rstrip("0").rstrip(".")
+
     def _set_flash(self, message: str, kind: str = "info") -> None:
         self.flash_message = message
         self.flash_kind = kind
+        self.flash_token += 1
 
     def clear_flash(self) -> None:
         self.flash_message = ""
         self.flash_kind = "info"
         self.login_error = ""
+
+    def _sync_role_management_class(self) -> None:
+        available = [str(item) for item in self.role_management_classes if str(item).strip()]
+        if self.selected_role_management_class in available:
+            return
+        self.selected_role_management_class = ""
+
+    @rx.event(background=True)
+    async def schedule_flash_auto_clear(self) -> None:
+        expected_token = int(self.flash_token)
+        await asyncio.sleep(3)
+        async with self:
+            if self.flash_message and self.flash_token == expected_token:
+                self.flash_message = ""
+                self.flash_kind = "info"
+                self.login_error = ""
 
     def _apply_snapshot(self, snapshot: dict) -> None:
         self.selected_account_id = snapshot["selected_account_id"]
@@ -190,12 +253,15 @@ class ConductState(rx.State):
         self.current_user_class_name = str(snapshot.get("current_user_class_name", ""))
         self.current_user_student_code = str(snapshot.get("current_user_student_code", ""))
         self.role_management_rows = list(snapshot.get("role_management_rows", []))
+        self.role_management_classes = list(snapshot.get("role_management_classes", []))
+        self._sync_role_management_class()
         self.students = snapshot["students"]
         self.selected_student_id = snapshot["selected_student_id"]
         self.selected_student_label = snapshot["selected_student_label"]
         self.selected_student_name = snapshot["selected_student_name"]
         self.selected_student_code = snapshot["selected_student_code"]
         self.selected_student_class = snapshot["selected_student_class"]
+        self.advisor_gpa_input = str(snapshot.get("selected_student_gpa", "0"))
         self.semesters = snapshot["semesters"]
         self.selected_semester_id = snapshot["selected_semester_id"]
         self.selected_semester_name = snapshot["selected_semester_name"]
@@ -216,6 +282,7 @@ class ConductState(rx.State):
         self.can_edit_class_note = snapshot["can_edit_class_note"]
         self.can_edit_advisor_note = snapshot["can_edit_advisor_note"]
         self.can_save_student = snapshot["can_save_student"]
+        self.can_save_class = bool(snapshot.get("can_save_class", False))
         self.can_submit_student = snapshot["can_submit_student"]
         self.can_review_class = snapshot["can_review_class"]
         self.can_review_advisor = snapshot["can_review_advisor"]
@@ -235,6 +302,7 @@ class ConductState(rx.State):
         self.has_open_events = snapshot["has_open_events"]
         self.selected_semester_is_active = bool(snapshot.get("selected_semester_is_active", True))
         self.criterion_choice_labels = list(snapshot.get("criterion_choice_labels", []))
+        self.criterion_choice_ids = [int(item) for item in snapshot.get("criterion_choice_ids", [])]
         if self.admin_new_event_semester_id == 0 or not any(
             int(item["id"]) == self.admin_new_event_semester_id for item in self.semesters
         ):
@@ -292,9 +360,21 @@ class ConductState(rx.State):
         self.auth_mode = "register"
         self.login_error = ""
         self.flash_message = ""
+        if not self.register_faculty:
+            self.register_faculty = REGISTER_FACULTY_OPTIONS[0]
+        if self.register_major not in REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, []):
+            self.register_major = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, [""])[0]
+        if not self.register_gender:
+            self.register_gender = REGISTER_GENDER_OPTIONS[0]
 
     def set_register_field(self, field_name: str, value: str) -> None:
         setattr(self, field_name, value)
+
+    def set_register_faculty(self, value: str) -> None:
+        self.register_faculty = value
+        majors = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(value, [])
+        if self.register_major not in majors:
+            self.register_major = majors[0] if majors else ""
 
     def reset_register_form(self) -> None:
         self.register_username = ""
@@ -304,8 +384,12 @@ class ConductState(rx.State):
         self.register_student_code = ""
         self.register_email = ""
         self.register_class_name = ""
-        self.register_faculty = ""
-        self.register_major = ""
+        self.register_faculty = REGISTER_FACULTY_OPTIONS[0]
+        self.register_major = REGISTER_MAJOR_OPTIONS_BY_FACULTY[self.register_faculty][0]
+        self.register_phone = ""
+        self.register_birth_date = ""
+        self.register_gender = REGISTER_GENDER_OPTIONS[0]
+        self.register_address = ""
 
     def register_account(self) -> None:
         if self.register_password != self.register_password_confirm:
@@ -321,6 +405,10 @@ class ConductState(rx.State):
                 class_name=self.register_class_name,
                 faculty=self.register_faculty,
                 major=self.register_major,
+                phone=self.register_phone,
+                birth_date=self.register_birth_date,
+                gender=self.register_gender,
+                address=self.register_address,
             )
         except ValueError as exc:
             self._set_flash(str(exc), "error")
@@ -339,8 +427,9 @@ class ConductState(rx.State):
                 password=self.login_password,
             )
         except ValueError as exc:
-            self.login_error = str(exc)
+            self.login_error = ""
             self.is_authenticated = False
+            self._set_flash(str(exc), "error")
             return
         self.login_error = ""
         self.is_authenticated = True
@@ -350,7 +439,10 @@ class ConductState(rx.State):
         self.selected_student_id = 0
         self.selected_semester_id = 0
         role = str(auth["role"])
-        if role in {"advisor", "class_monitor"}:
+        if role == "class_monitor":
+            self.active_tab = "students_score_list"
+            self.nav_students_open = True
+        elif role == "advisor":
             self.active_tab = "students"
             self.nav_students_open = True
         else:
@@ -358,6 +450,7 @@ class ConductState(rx.State):
             self.nav_students_open = role == "admin"
         self.event_tab = "joined"
         self.login_password = ""
+        self.profile_editing = False
         self._refresh()
         self._set_flash(f"Đăng nhập thành công ({auth['role_label']}).", "success")
 
@@ -368,17 +461,30 @@ class ConductState(rx.State):
         self.selected_account_id = 0
         self.selected_student_id = 0
         self.selected_semester_id = 0
+        self.advisor_gpa_input = ""
         self.students = []
         self.semesters = []
         self.current_user_class_name = ""
         self.current_user_student_code = ""
         self.role_management_rows = []
+        self.role_management_classes = []
+        self.selected_role_management_class = ""
         self.score_rows = []
         self.evidence_rows = []
         self.joined_events = []
         self.registered_events = []
         self.open_events = []
+        self.admin_new_event_start_time = ""
+        self.admin_new_event_end_time = ""
+        self.admin_new_event_location = ""
         self.student_profile = {}
+        self.profile_editing = False
+        self.profile_edit_full_name = ""
+        self.profile_edit_email = ""
+        self.profile_edit_phone = ""
+        self.profile_edit_birth_date = ""
+        self.profile_edit_gender = ""
+        self.profile_edit_address = ""
         self.flash_message = ""
         self.flash_kind = "info"
         self.login_error = ""
@@ -391,12 +497,17 @@ class ConductState(rx.State):
 
     def open_students_list(self) -> None:
         self.nav_students_open = True
-        self.active_tab = "students"
+        if self.current_user_role == "class_monitor":
+            self.active_tab = "students_score_list"
+        elif self.current_user_role == "advisor":
+            self.active_tab = "students"
+        else:
+            self.active_tab = "student_info"
         self._refresh()
 
     def select_tab(self, tab: str) -> None:
         if tab == "role_management" and self.current_user_role not in {"admin", "advisor"}:
-            self._set_flash("Bạn không có quyền truy cập phần phân quyền tài khoản.", "error")
+            self._set_flash("Bạn không có quyền truy cập phần quản lý tài khoản.", "error")
             self.active_tab = "student_info"
             self._refresh()
             return
@@ -410,26 +521,55 @@ class ConductState(rx.State):
             self.active_tab = "student_info"
             self._refresh()
             return
-        if tab == "students_evidence" and self.current_user_role != "class_monitor":
+        if tab == "students" and self.current_user_role != "advisor":
+            self._set_flash("Chỉ cố vấn học tập được mở danh sách sinh viên.", "error")
+            self.active_tab = "student_info"
+            self._refresh()
+            return
+        if tab in {"students_evidence", "students_evidence_list"} and self.current_user_role != "class_monitor":
             self._set_flash("Cố vấn học tập và admin không duyệt minh chứng.", "error")
-            self.active_tab = "students"
+            self.active_tab = "students_score_list" if self.current_user_role == "class_monitor" else "student_info"
             self.nav_students_open = True
             self._refresh()
             return
-        if tab in ("students_score", "students_evidence"):
+        if tab in {"students_events", "students_events_list"} and self.current_user_role != "class_monitor":
+            self._set_flash("Chỉ ban cán sự được duyệt sự kiện.", "error")
+            self.active_tab = "student_info"
+            self._refresh()
+            return
+        if tab == "students_score_list" and self.current_user_role != "class_monitor":
+            self.active_tab = "students" if self.current_user_role == "advisor" else "student_info"
+            self.nav_students_open = True
+            self._refresh()
+            return
+        if tab == "students_gpa" and self.current_user_role != "advisor":
+            self._set_flash("Chỉ cố vấn học tập được nhập GPA.", "error")
+            self.active_tab = "student_info"
+            self._refresh()
+            return
+        if tab == "students_score" and self.current_user_role not in {"class_monitor", "advisor"}:
+            self._set_flash("Chỉ ban cán sự hoặc cố vấn học tập được mở phiếu điểm của sinh viên.", "error")
+            self.active_tab = "student_info"
+            self._refresh()
+            return
+        if tab in ("students_score", "students_evidence", "students_events", "students_gpa"):
             if not self.selected_student_id:
-                self._set_flash("Hãy vào Danh sách sinh viên và chọn một sinh viên trước.", "error")
-                self.active_tab = "students"
+                entry_label = "Phê duyệt" if self.current_user_role == "class_monitor" else "Danh sách sinh viên"
+                self._set_flash(f"Hãy vào {entry_label} và chọn một sinh viên trước.", "error")
+                self.active_tab = "students_score_list" if self.current_user_role == "class_monitor" else "students"
                 self.nav_students_open = True
                 self._refresh()
                 return
-        if tab in ("students", "students_score", "students_evidence"):
+        if tab in ("students", "students_score_list", "students_evidence_list", "students_events_list", "students_score", "students_evidence", "students_events", "students_gpa"):
             self.nav_students_open = True
         if tab in {"score", "evidence", "events"} and self.current_user_role in {"student", "class_monitor"}:
             self.selected_student_id = self.selected_account_id
             self.selected_semester_id = 0
         if tab == "student_info" and self.current_user_role in {"student", "class_monitor"}:
             self.selected_student_id = self.selected_account_id
+            self.profile_editing = False
+        if tab == "role_management":
+            self.selected_role_management_class = ""
         self.active_tab = tab
         self._refresh()
 
@@ -445,11 +585,29 @@ class ConductState(rx.State):
 
     def pick_student_open_score(self, label: str) -> None:
         self.select_student_by_label(label)
-        if self.current_user_role in {"class_monitor", "advisor", "admin"}:
+        if self.current_user_role in {"class_monitor", "advisor"}:
             self.active_tab = "students_score"
             self.nav_students_open = True
         else:
-            self.active_tab = "score"
+            self._set_flash("Vai trò hiện tại không được mở phiếu điểm của sinh viên khác.", "error")
+
+    def pick_student_open_gpa(self, label: str) -> None:
+        self.select_student_by_label(label)
+        if self.current_user_role == "advisor":
+            self.active_tab = "students_gpa"
+            self.nav_students_open = True
+        else:
+            self._set_flash("Chỉ cố vấn học tập được nhập GPA.", "error")
+
+    def pick_student_open_evidence(self, label: str) -> None:
+        self.select_student_by_label(label)
+        self.active_tab = "students_evidence"
+        self.nav_students_open = True
+
+    def pick_student_open_events(self, label: str) -> None:
+        self.select_student_by_label(label)
+        self.active_tab = "students_events"
+        self.nav_students_open = True
 
     def pick_student_open_info(self, label: str) -> None:
         self.select_student_by_label(label)
@@ -476,12 +634,13 @@ class ConductState(rx.State):
             self._set_flash("Nhập tên sự kiện.", "error")
             return
         choice = (self.admin_event_criterion_choice or "").strip()
-        if "|" not in choice:
+        if choice not in self.criterion_choice_labels:
             self._set_flash("Chọn tiêu chí cộng điểm.", "error")
             return
         try:
-            criterion_id = int(choice.split("|", 1)[0])
-        except ValueError:
+            criterion_index = self.criterion_choice_labels.index(choice)
+            criterion_id = int(self.criterion_choice_ids[criterion_index])
+        except (ValueError, IndexError):
             self._set_flash("Chọn tiêu chí cộng điểm.", "error")
             return
         raw_points = (self.admin_new_event_points or "0").strip().replace(",", ".")
@@ -492,12 +651,24 @@ class ConductState(rx.State):
             return
         semester_id = int(self.admin_new_event_semester_id or self.selected_semester_id)
         try:
-            create_admin_event(self.selected_account_id, semester_id, criterion_id, name, points)
+            create_admin_event(
+                self.selected_account_id,
+                semester_id,
+                criterion_id,
+                name,
+                points,
+                self.admin_new_event_start_time,
+                self.admin_new_event_end_time,
+                self.admin_new_event_location,
+            )
         except ValueError as exc:
             self._set_flash(str(exc), "error")
             return
         self.admin_new_event_name = ""
         self.admin_new_event_points = "1"
+        self.admin_new_event_start_time = ""
+        self.admin_new_event_end_time = ""
+        self.admin_new_event_location = ""
         self._refresh()
         self._set_flash("Đã tạo sự kiện mới.", "success")
 
@@ -522,6 +693,68 @@ class ConductState(rx.State):
         self._refresh()
         self._set_flash("Đã lưu mốc thời gian đánh giá rèn luyện cho học kỳ đã chọn.", "success")
 
+    def select_role_management_class(self, class_name: str) -> None:
+        self.selected_role_management_class = class_name
+
+    def start_profile_edit(self) -> None:
+        if not self.can_edit_own_profile:
+            self._set_flash("Bạn chỉ được sửa thông tin cá nhân của chính mình.", "error")
+            return
+        self.profile_edit_full_name = str(self.student_profile.get("full_name", ""))
+        self.profile_edit_email = str(self.student_profile.get("email", ""))
+        self.profile_edit_phone = str(self.student_profile.get("phone", ""))
+        self.profile_edit_birth_date = str(self.student_profile.get("birth_date_input", ""))
+        self.profile_edit_gender = str(self.student_profile.get("gender", "")) or REGISTER_GENDER_OPTIONS[0]
+        self.profile_edit_address = str(self.student_profile.get("address", ""))
+        self.profile_editing = True
+
+    def cancel_profile_edit(self) -> None:
+        self.profile_editing = False
+
+    def set_profile_field(self, field_name: str, value: str) -> None:
+        setattr(self, field_name, value)
+
+    def set_advisor_gpa_input(self, value: str) -> None:
+        self.advisor_gpa_input = value
+
+    def save_advisor_gpa(self) -> None:
+        if self.current_user_role != "advisor":
+            self._set_flash("Chỉ cố vấn học tập được nhập GPA.", "error")
+            return
+        try:
+            save_student_gpa(
+                self.selected_account_id,
+                self.selected_student_id,
+                self.selected_semester_id,
+                self.advisor_gpa_input,
+            )
+        except ValueError as exc:
+            self._set_flash(str(exc), "error")
+            return
+        self._refresh()
+        self._set_flash("Đã lưu GPA cho sinh viên.", "success")
+
+    def save_profile(self) -> None:
+        if not self.can_edit_own_profile:
+            self._set_flash("Bạn chỉ được sửa thông tin cá nhân của chính mình.", "error")
+            return
+        try:
+            update_user_profile(
+                current_user_id=self.selected_account_id,
+                full_name=self.profile_edit_full_name,
+                email=self.profile_edit_email,
+                phone=self.profile_edit_phone,
+                birth_date=self.profile_edit_birth_date,
+                gender=self.profile_edit_gender,
+                address=self.profile_edit_address,
+            )
+        except ValueError as exc:
+            self._set_flash(str(exc), "error")
+            return
+        self.profile_editing = False
+        self._refresh()
+        self._set_flash("Đã lưu thông tin cá nhân.", "success")
+
     def assign_role(self, user_id: int, role_value: str) -> None:
         try:
             update_user_role(self.selected_account_id, int(user_id), role_value)
@@ -530,6 +763,21 @@ class ConductState(rx.State):
             return
         self._refresh()
         self._set_flash("Đã cập nhật quyền tài khoản.", "success")
+
+    def assign_role_by_label(self, user_id: int, role_label_text: str) -> None:
+        role_value = ROLE_VALUE_BY_LABEL.get((role_label_text or "").strip())
+        if not role_value:
+            return
+        self.assign_role(user_id, role_value)
+
+    def delete_account(self, user_id: int) -> None:
+        try:
+            delete_user_account(self.selected_account_id, int(user_id))
+        except ValueError as exc:
+            self._set_flash(str(exc), "error")
+            return
+        self._refresh()
+        self._set_flash("Đã xóa tài khoản.", "success")
 
     def select_evidence_category_key(self, category_key: str) -> None:
         self.selected_evidence_category = category_key
@@ -816,7 +1064,7 @@ class ConductState(rx.State):
         updated_rows = []
         for row in self.score_rows:
             if row.get("criterion_id") == int(criterion_id):
-                row = {**row, field_name: value}
+                row = {**row, field_name: self._clamp_score_input(value, row)}
             updated_rows.append(row)
         self.score_rows = updated_rows
 
@@ -857,12 +1105,25 @@ class ConductState(rx.State):
         if self._save_scores("save_draft"):
             self._set_flash("Đã lưu phiếu điểm.", "success")
 
+    def save_class_scores(self) -> None:
+        if self._save_scores("save_class"):
+            self._set_flash("Đã lưu phiếu điểm ban cán sự.", "success")
+
     def submit_student_scores(self) -> None:
         if self._save_scores("submit_student"):
             self._set_flash("Sinh viên đã gửi phiếu đánh giá.", "success")
 
     def approve_class_scores(self) -> None:
         if self._save_scores("review_class"):
+            self._set_flash("Đã duyệt phiếu điểm.", "success")
+
+    def approve_student_score_from_list(self, label: str) -> None:
+        self.select_student_by_label(label)
+        self.active_tab = "students_score_list"
+        self.nav_students_open = True
+        if self._save_scores("review_class"):
+            self.active_tab = "students_score_list"
+            self.nav_students_open = True
             self._set_flash("Đã duyệt phiếu điểm.", "success")
 
     def approve_advisor_scores(self) -> None:
@@ -920,6 +1181,49 @@ class ConductState(rx.State):
         return [str(item["name"]) for item in self.semesters]
 
     @rx.var
+    def register_faculty_options(self) -> list[str]:
+        return list(REGISTER_FACULTY_OPTIONS)
+
+    @rx.var
+    def register_major_options(self) -> list[str]:
+        return list(REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, []))
+
+    @rx.var
+    def register_gender_options(self) -> list[str]:
+        return list(REGISTER_GENDER_OPTIONS)
+
+    @rx.var
+    def filtered_role_management_rows(self) -> list[dict]:
+        selected_class = (self.selected_role_management_class or "").strip()
+        if not selected_class:
+            return []
+        return [
+            row
+            for row in self.role_management_rows
+            if str(row.get("management_group_label", "")).strip() == selected_class
+        ]
+
+    @rx.var
+    def role_management_class_groups(self) -> list[str]:
+        return [item for item in self.role_management_classes if str(item) != "Tài khoản hệ thống"]
+
+    @rx.var
+    def role_management_has_selection(self) -> bool:
+        return bool((self.selected_role_management_class or "").strip())
+
+    @rx.var
+    def has_filtered_role_management_rows(self) -> bool:
+        return bool(self.filtered_role_management_rows)
+
+    @rx.var
+    def can_edit_own_profile(self) -> bool:
+        return (
+            self.current_user_role in {"student", "class_monitor"}
+            and self.active_tab == "student_info"
+            and int(self.selected_student_id or 0) == int(self.selected_account_id or 0)
+        )
+
+    @rx.var
     def evidence_grid_columns(self) -> str:
         parts = ["64px"]
         if self.show_student_code_col:
@@ -951,18 +1255,26 @@ class ConductState(rx.State):
 
     @rx.var
     def show_student_directory_tab(self) -> bool:
-        return self.current_user_role in {"class_monitor", "advisor", "admin"}
+        return self.current_user_role in {"class_monitor", "advisor"}
+
+    @rx.var
+    def student_directory_sidebar_label(self) -> str:
+        return "Phê duyệt" if self.current_user_role == "class_monitor" else "Danh sách sinh viên"
 
     @rx.var
     def show_self_score_tab(self) -> bool:
-        return self.current_user_role == "student"
+        return self.current_user_role in {"student", "class_monitor"}
 
     @rx.var
     def show_students_score_tab(self) -> bool:
-        return self.current_user_role in {"class_monitor", "advisor", "admin"}
+        return self.current_user_role in {"class_monitor", "advisor"}
 
     @rx.var
     def show_students_evidence_tab(self) -> bool:
+        return self.current_user_role == "class_monitor"
+
+    @rx.var
+    def show_students_events_tab(self) -> bool:
         return self.current_user_role == "class_monitor"
 
     @rx.var
@@ -979,13 +1291,22 @@ class ConductState(rx.State):
 
     @rx.var
     def nav_students_parent_active(self) -> bool:
-        return self.active_tab in {"students", "students_score", "students_evidence"}
+        return self.active_tab in {
+            "students",
+            "students_score_list",
+            "students_evidence_list",
+            "students_events_list",
+            "students_score",
+            "students_evidence",
+            "students_events",
+            "students_gpa",
+        }
 
     @rx.var
     def grading_target_banner_text(self) -> str:
-        if self.active_tab not in {"students_score", "students_evidence"}:
+        if self.active_tab not in {"students_score", "students_evidence", "students_events", "students_gpa"}:
             return ""
-        if self.current_user_role not in {"class_monitor", "advisor", "admin"}:
+        if self.current_user_role not in {"class_monitor", "advisor"}:
             return ""
         name = self.selected_student_name or ""
         code = self.selected_student_code or ""
