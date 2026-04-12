@@ -283,27 +283,35 @@ CATEGORY_LABELS = {item["key"]: item["label"] for item in EVIDENCE_CATEGORIES}
 
 
 CLASSROOMS = {
-    "D23CQAT01": {
+    "D23CQAT001": {
         "advisor_username": "CVHT001",
         "advisor_name": "Cố vấn học tập 001",
+        "class_monitor_username": "B23DCAT001",
+        "class_monitor_name": "Nguyễn Đức Anh",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
     },
-    "D23CQAT02": {
+    "D23CQAT002": {
         "advisor_username": "CVHT002",
         "advisor_name": "Cố vấn học tập 002",
+        "class_monitor_username": "B23DCAT004",
+        "class_monitor_name": "Phạm Gia Hân",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
     },
-    "D23CQCN01": {
+    "D23CQCN001": {
         "advisor_username": "CVHT003",
         "advisor_name": "Cố vấn học tập 003",
+        "class_monitor_username": "B23DCCN001",
+        "class_monitor_name": "Nguyễn Hoàng Nam",
         "faculty": "Công nghệ thông tin",
         "major": "Công nghệ thông tin",
     },
-    "D23CQCN02": {
+    "D23CQCN002": {
         "advisor_username": "CVHT004",
         "advisor_name": "Cố vấn học tập 004",
+        "class_monitor_username": "B23DCCN004",
+        "class_monitor_name": "Bùi Khánh Vy",
         "faculty": "Công nghệ thông tin",
         "major": "Công nghệ thông tin",
     },
@@ -351,127 +359,151 @@ ROLE_MANAGEMENT_ROLE_ORDER = {
 }
 
 
-STUDENT_PROFILES: dict[str, dict] = {
-    "B23DCAT001": {
+_STUDENT_PROFILE_ROWS = [
+    {
         "student_code": "B23DCAT001",
-        "full_name": "Nguyễn An Khang",
-        "class_name": "D23CQAT01",
-        "email": "b23dcat001@stu.ptit.edu.vn",
-        "phone": "0901000001",
+        "full_name": "Nguyễn Đức Anh",
+        "class_name": "D23CQAT001",
+        "phone": "0903100001",
         "gender": "Nam",
         "birth_date": "2005-01-12",
-        "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Hà Đông, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCAT002": {
+    {
         "student_code": "B23DCAT002",
-        "full_name": "Trần Minh Anh",
-        "class_name": "D23CQAT01",
-        "email": "b23dcat002@stu.ptit.edu.vn",
-        "phone": "0901000002",
+        "full_name": "Trần Minh Châu",
+        "class_name": "D23CQAT001",
+        "phone": "0903100002",
         "gender": "Nữ",
         "birth_date": "2005-03-18",
-        "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Thanh Xuân, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCAT003": {
+    {
         "student_code": "B23DCAT003",
-        "full_name": "Lê Thu Hà",
-        "class_name": "D23CQAT02",
-        "email": "b23dcat003@stu.ptit.edu.vn",
-        "phone": "0901000003",
-        "gender": "Nữ",
-        "birth_date": "2005-06-02",
-        "status": "Đang học",
+        "full_name": "Lê Quốc Bảo",
+        "class_name": "D23CQAT001",
+        "phone": "0903100003",
+        "gender": "Nam",
+        "birth_date": "2005-05-07",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Cầu Giấy, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCAT004": {
+    {
         "student_code": "B23DCAT004",
         "full_name": "Phạm Gia Hân",
-        "class_name": "D23CQAT02",
-        "email": "b23dcat004@stu.ptit.edu.vn",
-        "phone": "0901000004",
+        "class_name": "D23CQAT002",
+        "phone": "0903200001",
         "gender": "Nữ",
-        "birth_date": "2005-09-21",
-        "status": "Đang học",
+        "birth_date": "2005-02-14",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Đống Đa, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCCN001": {
+    {
+        "student_code": "B23DCAT005",
+        "full_name": "Đỗ Hải Nam",
+        "class_name": "D23CQAT002",
+        "phone": "0903200002",
+        "gender": "Nam",
+        "birth_date": "2005-06-21",
+        "faculty": "An toàn thông tin",
+        "major": "An toàn thông tin",
+        "address": "Bắc Từ Liêm, Hà Nội",
+    },
+    {
+        "student_code": "B23DCAT006",
+        "full_name": "Vũ Khánh Linh",
+        "class_name": "D23CQAT002",
+        "phone": "0903200003",
+        "gender": "Nữ",
+        "birth_date": "2005-09-09",
+        "faculty": "An toàn thông tin",
+        "major": "An toàn thông tin",
+        "address": "Long Biên, Hà Nội",
+    },
+    {
         "student_code": "B23DCCN001",
         "full_name": "Nguyễn Hoàng Nam",
-        "class_name": "D23CQCN01",
-        "email": "b23dccn001@stu.ptit.edu.vn",
-        "phone": "0902000001",
+        "class_name": "D23CQCN001",
+        "phone": "0903300001",
         "gender": "Nam",
-        "birth_date": "2005-02-14",
-        "status": "Đang học",
+        "birth_date": "2005-01-30",
         "faculty": "Công nghệ thông tin",
         "major": "Công nghệ thông tin",
         "address": "Nam Từ Liêm, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCCN002": {
+    {
         "student_code": "B23DCCN002",
         "full_name": "Võ Ngọc Linh",
-        "class_name": "D23CQCN01",
-        "email": "b23dccn002@stu.ptit.edu.vn",
-        "phone": "0902000002",
+        "class_name": "D23CQCN001",
+        "phone": "0903300002",
         "gender": "Nữ",
         "birth_date": "2005-04-09",
-        "status": "Đang học",
         "faculty": "Công nghệ thông tin",
         "major": "Công nghệ thông tin",
         "address": "Hoàng Mai, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
     },
-    "B23DCCN003": {
+    {
         "student_code": "B23DCCN003",
-        "full_name": "Đặng Quốc Huy",
-        "class_name": "D23CQCN02",
-        "email": "b23dccn003@stu.ptit.edu.vn",
-        "phone": "0902000003",
+        "full_name": "Trần Đức Long",
+        "class_name": "D23CQCN001",
+        "phone": "0903300003",
         "gender": "Nam",
         "birth_date": "2005-07-27",
-        "status": "Đang học",
-        "faculty": "Công nghệ thông tin",
-        "major": "Công nghệ thông tin",
-        "address": "Long Biên, Hà Nội",
-        "citizen_id": "",
-        "semester_metrics": {},
-    },
-    "B23DCCN004": {
-        "student_code": "B23DCCN004",
-        "full_name": "Bùi Khánh Vy",
-        "class_name": "D23CQCN02",
-        "email": "b23dccn004@stu.ptit.edu.vn",
-        "phone": "0902000004",
-        "gender": "Nữ",
-        "birth_date": "2005-11-05",
-        "status": "Đang học",
         "faculty": "Công nghệ thông tin",
         "major": "Công nghệ thông tin",
         "address": "Ba Đình, Hà Nội",
+    },
+    {
+        "student_code": "B23DCCN004",
+        "full_name": "Bùi Khánh Vy",
+        "class_name": "D23CQCN002",
+        "phone": "0903400001",
+        "gender": "Nữ",
+        "birth_date": "2005-02-22",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Gia Lâm, Hà Nội",
+    },
+    {
+        "student_code": "B23DCCN005",
+        "full_name": "Phan Minh Khoa",
+        "class_name": "D23CQCN002",
+        "phone": "0903400002",
+        "gender": "Nam",
+        "birth_date": "2005-08-11",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Hai Bà Trưng, Hà Nội",
+    },
+    {
+        "student_code": "B23DCCN006",
+        "full_name": "Đặng Thu Trang",
+        "class_name": "D23CQCN002",
+        "phone": "0903400003",
+        "gender": "Nữ",
+        "birth_date": "2005-10-03",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Thanh Trì, Hà Nội",
+    },
+]
+
+
+STUDENT_PROFILES: dict[str, dict] = {
+    row["student_code"]: {
+        **row,
+        "email": f"{row['student_code'].lower()}@stu.ptit.edu.vn",
+        "status": "Đang học",
         "citizen_id": "",
         "semester_metrics": {},
-    },
+    }
+    for row in _STUDENT_PROFILE_ROWS
 }
 
 
@@ -672,6 +704,9 @@ HISTORICAL_SCORE_PRESETS = [
 ]
 
 
+HISTORICAL_GPA_VALUES = [3.04, 3.18, 3.34, 3.68]
+
+
 SEMESTER_STAGE_OVERRIDES = {
     "Hoc ky 1 nam hoc 2025-2026": [
         (datetime(2025, 8, 1, 0, 0), datetime(2026, 1, 31, 23, 45), "Cập nhật, duyệt minh chứng"),
@@ -688,7 +723,81 @@ SEMESTER_STAGE_OVERRIDES = {
 }
 
 
-REGISTERED_EVENT_DETAILS: dict[str, dict[str, str]] = {}
+DEFAULT_EVENT_BLUEPRINTS = [
+    {
+        "name": "Seminar An toàn hệ thống 2026",
+        "criterion_title": STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
+        "points": 2.0,
+        "start_time": "08:00 20/04/2026",
+        "end_time": "11:00 20/04/2026",
+        "location": "Hội trường A1",
+        "type_label": "Học thuật",
+        "note": "Tính điểm tiêu chí học thuật và ngoại khóa.",
+    },
+    {
+        "name": "Tọa đàm nghiên cứu khoa học sinh viên",
+        "criterion_title": STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
+        "points": 3.0,
+        "start_time": "13:30 24/04/2026",
+        "end_time": "16:30 24/04/2026",
+        "location": "Phòng họp B3",
+        "type_label": "Học thuật",
+        "note": "Sự kiện học thuật dành cho sinh viên toàn khoa.",
+    },
+    {
+        "name": "Sinh hoạt lớp đầu tháng 4",
+        "criterion_title": CLASS_MEETING_EVENT_CRITERION_TITLE,
+        "points": 1.0,
+        "start_time": "09:00 15/04/2026",
+        "end_time": "10:30 15/04/2026",
+        "location": "Phòng C201",
+        "type_label": "Họp lớp",
+        "note": "Điểm danh sinh hoạt lớp định kỳ.",
+    },
+    {
+        "name": "Sinh hoạt lớp giữa học kỳ",
+        "criterion_title": CLASS_MEETING_EVENT_CRITERION_TITLE,
+        "points": 1.0,
+        "start_time": "09:00 08/05/2026",
+        "end_time": "10:30 08/05/2026",
+        "location": "Phòng C202",
+        "type_label": "Họp lớp",
+        "note": "Tổng hợp tiến độ học tập và công tác lớp.",
+    },
+    {
+        "name": "Hội thảo kỹ năng CV và phỏng vấn",
+        "criterion_title": CAREER_WORKSHOP_EVENT_CRITERION_TITLE,
+        "points": 2.0,
+        "start_time": "14:00 18/05/2026",
+        "end_time": "17:00 18/05/2026",
+        "location": "Hội trường lớn",
+        "type_label": "Hội thảo việc làm",
+        "note": "Hướng dẫn viết CV và luyện phỏng vấn tuyển dụng.",
+    },
+    {
+        "name": "Ngày hội việc làm PTIT 2026",
+        "criterion_title": CAREER_WORKSHOP_EVENT_CRITERION_TITLE,
+        "points": 3.0,
+        "start_time": "08:00 25/05/2026",
+        "end_time": "16:00 25/05/2026",
+        "location": "Sân trung tâm",
+        "type_label": "Hội thảo việc làm",
+        "note": "Ngày hội tuyển dụng, kết nối doanh nghiệp và sinh viên.",
+    },
+]
+
+
+REGISTERED_EVENT_DETAILS: dict[str, dict[str, str]] = {
+    item["name"]: {
+        "type_label": item["type_label"],
+        "start_time": item["start_time"],
+        "end_time": item["end_time"],
+        "location": item["location"],
+        "counts_to_score": "Có",
+        "note": item["note"],
+    }
+    for item in DEFAULT_EVENT_BLUEPRINTS
+}
 
 
 @contextmanager
@@ -941,6 +1050,23 @@ def ensure_semester(
     session.add(semester)
     session.flush()
     return semester
+
+
+def ensure_semester_metric(session: Session, student_id: int, semester_id: int, gpa: float) -> ReflexSemesterMetric:
+    metric = session.scalar(
+        select(ReflexSemesterMetric).where(
+            ReflexSemesterMetric.student_id == student_id,
+            ReflexSemesterMetric.semester_id == semester_id,
+        )
+    )
+    if metric is None:
+        metric = ReflexSemesterMetric(student_id=student_id, semester_id=semester_id, gpa=round(gpa, 2))
+        session.add(metric)
+    else:
+        metric.gpa = round(gpa, 2)
+        metric.updated_at = current_app_time()
+    session.flush()
+    return metric
 
 
 def ensure_user(
@@ -1961,6 +2087,47 @@ def ensure_reflex_submission(
     return submission
 
 
+def ensure_default_events(session: Session, semesters: list[Semester]) -> None:
+    active_semester = next((semester for semester in semesters if semester.is_active), None)
+    if active_semester is None:
+        return
+    criteria_by_title = {
+        criterion.title: criterion
+        for criterion in session.scalars(select(Criterion).where(Criterion.title.in_(AUTO_EVENT_CRITERIA_TITLES)))
+    }
+    existing_events = {
+        event.name: event
+        for event in session.scalars(select(Event).where(Event.semester_id == active_semester.id))
+    }
+    for blueprint in DEFAULT_EVENT_BLUEPRINTS:
+        criterion = criteria_by_title.get(str(blueprint["criterion_title"]))
+        if criterion is None:
+            continue
+        event = existing_events.get(str(blueprint["name"]))
+        normalized_start = normalize_event_datetime_input(str(blueprint["start_time"]))
+        normalized_end = normalize_event_datetime_input(str(blueprint["end_time"]))
+        if event is None:
+            event = Event(
+                semester_id=active_semester.id,
+                criterion_id=criterion.id,
+                name=str(blueprint["name"]),
+                points=float(blueprint["points"]),
+                start_time=normalized_start,
+                end_time=normalized_end,
+                location=str(blueprint["location"]),
+                is_active=True,
+            )
+            session.add(event)
+            continue
+        event.criterion_id = criterion.id
+        event.points = float(blueprint["points"])
+        event.start_time = normalized_start
+        event.end_time = normalized_end
+        event.location = str(blueprint["location"])
+        event.is_active = True
+    session.flush()
+
+
 def ensure_historical_reflex_submissions(session: Session, students: list[User], semesters: list[Semester], criteria: list[Criterion]) -> None:
     completed_semesters = [semester for semester in semesters if not semester.is_active]
     target_semesters = completed_semesters[-4:]
@@ -1976,6 +2143,13 @@ def ensure_historical_reflex_submissions(session: Session, students: list[User],
                 continue
             reviewed_at = datetime.combine(semester.end_date, time(16, 0))
             preset = dict(HISTORICAL_SCORE_PRESETS[(semester_index + student_index) % len(HISTORICAL_SCORE_PRESETS)])
+            preset[CLASS_MONITOR_ROLE_CRITERION_TITLE] = 4.0 if student.role == UserRole.CLASS_MONITOR else 0.0
+            ensure_semester_metric(
+                session,
+                student_id=student.id,
+                semester_id=semester.id,
+                gpa=HISTORICAL_GPA_VALUES[(semester_index + student_index) % len(HISTORICAL_GPA_VALUES)],
+            )
             ensure_reflex_submission(
                 session,
                 student,
@@ -2046,12 +2220,13 @@ def ensure_reflex_demo_data() -> None:
         for username, profile in STUDENT_PROFILES.items():
             if username in suppressed_seed_usernames:
                 continue
+            student_role = UserRole.CLASS_MONITOR if username in CLASS_MONITOR_USERNAMES else UserRole.STUDENT
             ensure_user(
                 session,
                 username=username,
                 password=str(profile["student_code"]),
                 full_name=str(profile["full_name"]),
-                role=UserRole.STUDENT,
+                role=student_role,
                 student_code=str(profile["student_code"]),
                 email=str(profile["email"]),
                 class_name=str(profile["class_name"]),
@@ -2068,6 +2243,7 @@ def ensure_reflex_demo_data() -> None:
         sync_reflex_scores_with_criteria(session, criteria)
         students = list(session.scalars(select(User).where(User.role.in_(STUDENT_LIKE_ROLES)).order_by(User.student_code)))
         ensure_historical_reflex_submissions(session, students, semesters, criteria)
+        ensure_default_events(session, semesters)
 
 
 def account_scope_students(session: Session, current_user: User) -> list[User]:
@@ -3075,7 +3251,8 @@ def export_conduct_pdf_bytes(current_user_id: int, target_student_id: int, semes
             criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
             submission = ensure_reflex_submission(session, target, semester, criteria, status="draft")
 
-        apply_automatic_scores(session, submission, target, semester)
+        if submission.status != "advisor_reviewed":
+            apply_automatic_scores(session, submission, target, semester)
         recompute_totals(submission)
 
         groups = get_criteria_tree(session)

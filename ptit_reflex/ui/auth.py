@@ -122,7 +122,7 @@ def login_page() -> rx.Component:
                         form_label("Lớp", required=True),
                         form_input(
                             ConductState.register_class_name,
-                            "Ví dụ: D23CQAT01",
+                            "Ví dụ: D23CQAT001",
                             ConductState.set_register_field("register_class_name"),
                         ),
                         form_label("Khoa", required=True),

@@ -5,7 +5,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ptit_reflex.models import Criterion, CriterionGroup, Semester, User, UserRole
+from ptit_reflex.models import Criterion, CriterionGroup, Semester
 
 
 CRITERION_BLUEPRINT = [
@@ -79,150 +79,6 @@ CRITERION_BLUEPRINT = [
 ]
 
 
-DEFAULT_USERS = [
-    {
-        "username": "admin",
-        "password_hash": "admin123",
-        "full_name": "Quan tri he thong",
-        "role": UserRole.ADMIN,
-        "email": "admin@ptit.edu.vn",
-        "faculty": "PTIT",
-    },
-    {
-        "username": "CVHT001",
-        "password_hash": "CVHT001",
-        "full_name": "Co van hoc tap 001",
-        "role": UserRole.ADVISOR,
-        "student_code": "CVHT001",
-        "email": "CVHT001@ptit.edu.vn",
-        "class_name": "D23CQAT01",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "CVHT002",
-        "password_hash": "CVHT002",
-        "full_name": "Co van hoc tap 002",
-        "role": UserRole.ADVISOR,
-        "student_code": "CVHT002",
-        "email": "CVHT002@ptit.edu.vn",
-        "class_name": "D23CQAT02",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "CVHT003",
-        "password_hash": "CVHT003",
-        "full_name": "Co van hoc tap 003",
-        "role": UserRole.ADVISOR,
-        "student_code": "CVHT003",
-        "email": "CVHT003@ptit.edu.vn",
-        "class_name": "D23CQCN01",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-    {
-        "username": "CVHT004",
-        "password_hash": "CVHT004",
-        "full_name": "Co van hoc tap 004",
-        "role": UserRole.ADVISOR,
-        "student_code": "CVHT004",
-        "email": "CVHT004@ptit.edu.vn",
-        "class_name": "D23CQCN02",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-    {
-        "username": "B23DCAT001",
-        "password_hash": "B23DCAT001",
-        "full_name": "Nguyen An Khang",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCAT001",
-        "email": "b23dcat001@stu.ptit.edu.vn",
-        "class_name": "D23CQAT01",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "B23DCAT002",
-        "password_hash": "B23DCAT002",
-        "full_name": "Tran Minh Anh",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCAT002",
-        "email": "b23dcat002@stu.ptit.edu.vn",
-        "class_name": "D23CQAT01",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "B23DCAT003",
-        "password_hash": "B23DCAT003",
-        "full_name": "Le Thu Ha",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCAT003",
-        "email": "b23dcat003@stu.ptit.edu.vn",
-        "class_name": "D23CQAT02",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "B23DCAT004",
-        "password_hash": "B23DCAT004",
-        "full_name": "Pham Gia Han",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCAT004",
-        "email": "b23dcat004@stu.ptit.edu.vn",
-        "class_name": "D23CQAT02",
-        "faculty": "An toan thong tin",
-        "major": "An toan thong tin",
-    },
-    {
-        "username": "B23DCCN001",
-        "password_hash": "B23DCCN001",
-        "full_name": "Nguyen Hoang Nam",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCCN001",
-        "email": "b23dccn001@stu.ptit.edu.vn",
-        "class_name": "D23CQCN01",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-    {
-        "username": "B23DCCN002",
-        "password_hash": "B23DCCN002",
-        "full_name": "Vo Ngoc Linh",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCCN002",
-        "email": "b23dccn002@stu.ptit.edu.vn",
-        "class_name": "D23CQCN01",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-    {
-        "username": "B23DCCN003",
-        "password_hash": "B23DCCN003",
-        "full_name": "Dang Quoc Huy",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCCN003",
-        "email": "b23dccn003@stu.ptit.edu.vn",
-        "class_name": "D23CQCN02",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-    {
-        "username": "B23DCCN004",
-        "password_hash": "B23DCCN004",
-        "full_name": "Bui Khanh Vy",
-        "role": UserRole.STUDENT,
-        "student_code": "B23DCCN004",
-        "email": "b23dccn004@stu.ptit.edu.vn",
-        "class_name": "D23CQCN02",
-        "faculty": "Cong nghe thong tin",
-        "major": "Cong nghe thong tin",
-    },
-]
-
-
 DEFAULT_SEMESTERS = [
     {"name": "Hoc ky 1 nam hoc 2024-2025", "academic_year": "2024-2025", "start_date": date(2024, 9, 1), "end_date": date(2025, 1, 15), "is_active": False},
     {"name": "Hoc ky 2 nam hoc 2024-2025", "academic_year": "2024-2025", "start_date": date(2025, 2, 1), "end_date": date(2025, 6, 15), "is_active": False},
@@ -232,9 +88,6 @@ DEFAULT_SEMESTERS = [
 
 
 def seed_default_data(session: Session) -> None:
-    if not session.scalar(select(func.count()).select_from(User)):
-        session.add_all(User(**user_data) for user_data in DEFAULT_USERS)
-
     if not session.scalar(select(func.count()).select_from(Semester)):
         session.add_all(Semester(**semester_data) for semester_data in DEFAULT_SEMESTERS)
 
