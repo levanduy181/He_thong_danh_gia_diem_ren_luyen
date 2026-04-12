@@ -1,0 +1,1 @@
+export default ({ ["styles"] : ({ ["global"] : ({ [":root"] : ({  }), ["body"] : ({ ["fontFamily"] : "Inter, system-ui, sans-serif", ["--default-font-family"] : "Inter, system-ui, sans-serif", ["background"] : "#f8fafc", ["color"] : "#1f2937" }) }) }) })
