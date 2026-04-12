@@ -4,6 +4,9 @@ import reflex as rx
 
 from ptit_reflex.state import ConductState
 from ptit_reflex.ui import (
+    event_approval_page,
+    evidence_review_list_page,
+    events_review_list_page,
     event_detail_modal,
     events_page,
     evidence_detail_modal,
@@ -13,6 +16,7 @@ from ptit_reflex.ui import (
     full_header_bar,
     login_page,
     role_management_page,
+    score_review_list_page,
     score_page,
     sidebar,
     student_info_card,
@@ -49,9 +53,25 @@ def main_tab_body() -> rx.Component:
                                     ConductState.active_tab == "students",
                                     students_list_page(),
                                     rx.cond(
-                                        ConductState.active_tab == "students_evidence",
-                                        evidence_page(),
-                                        rx.cond(ConductState.active_tab == "students_score", score_page(), score_page()),
+                                        ConductState.active_tab == "students_score_list",
+                                        score_review_list_page(),
+                                        rx.cond(
+                                            ConductState.active_tab == "students_evidence_list",
+                                            evidence_review_list_page(),
+                                            rx.cond(
+                                                ConductState.active_tab == "students_events_list",
+                                                events_review_list_page(),
+                                                rx.cond(
+                                                    ConductState.active_tab == "students_events",
+                                                    event_approval_page(),
+                                                    rx.cond(
+                                                            ConductState.active_tab == "students_evidence",
+                                                            evidence_page(),
+                                                            rx.cond(ConductState.active_tab == "students_score", score_page(), score_page()),
+                                                        ),
+                                                ),
+                                            ),
+                                        ),
                                     ),
                                 ),
                             ),

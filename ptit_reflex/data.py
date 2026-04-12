@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import json
-import shutil
 from contextlib import contextmanager
 from datetime import date, datetime, time, timedelta
-from pathlib import Path
 
-import reflex as rx
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, inspect, select, text
 from sqlalchemy.orm import Mapped, Session, joinedload, mapped_column, relationship, sessionmaker
 
-from ptit_reflex.config import DATA_DIR, UPLOADS_DIR
+from ptit_reflex.config import DATA_DIR
 from ptit_reflex.db import Base
 from ptit_reflex.models import (
+    CriterionGroup,
     Criterion,
     Event,
     EventParticipation,
@@ -23,7 +21,6 @@ from ptit_reflex.models import (
     User,
     UserRole,
 )
-from ptit_reflex.security import hash_password, verify_password
 from ptit_reflex.services.evaluation_service import (
     approve_event_participation,
     get_active_events,
@@ -31,28 +28,26 @@ from ptit_reflex.services.evaluation_service import (
     get_semesters,
     submit_event_participation,
 )
-from ptit_reflex.services.seed import seed_default_data
+from ptit_reflex.services.seed import CRITERION_BLUEPRINT, seed_default_data
 
 
-def _store_password(password: str) -> str:
-    return hash_password(password)
+def _store_password_plain(password: str) -> str:
+    """Demo bài tập: lưu mật khẩu dạng plaintext (cột vẫn tên password_hash)."""
+    return password
 
 
 def _password_matches(plain: str, stored: str | None) -> bool:
-    return verify_password(plain, stored)
+    return plain == (stored or "")
 
 
-DEFAULT_STUDENT_USERNAME = "b23dccn001"
-DEFAULT_CLASS_MONITOR_USERNAME = "bancansu"
-DEFAULT_ADVISOR_USERNAME = "covan"
+DEFAULT_ADVISOR_USERNAME = "CVHT001"
 DEFAULT_ADMIN_USERNAME = "admin"
 REFLEX_DATABASE_PATH = DATA_DIR / "reflex_student_conduct.db"
 REFLEX_DATABASE_URL = f"sqlite:///{REFLEX_DATABASE_PATH.as_posix()}"
-DEMO_NOW = datetime(2026, 4, 11, 12, 0)
-UPLOADS_URL_PREFIX = "/_upload"
-UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-REFLEX_UPLOADS_DIR = Path(rx.get_upload_dir())
-REFLEX_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def current_app_time() -> datetime:
+    return datetime.now().astimezone().replace(tzinfo=None, microsecond=0)
 
 
 class ReflexSubmission(Base):
@@ -124,6 +119,20 @@ class ReflexEvidence(Base):
     semester: Mapped[Semester] = relationship()
 
 
+class ReflexSemesterMetric(Base):
+    __tablename__ = "reflex_semester_metrics"
+    __table_args__ = (UniqueConstraint("student_id", "semester_id", name="uq_reflex_student_semester_metric"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    semester_id: Mapped[int] = mapped_column(ForeignKey("semesters.id"))
+    gpa: Mapped[float] = mapped_column(Float, default=0.0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    student: Mapped[User] = relationship()
+    semester: Mapped[Semester] = relationship()
+
+
 reflex_engine = create_engine(
     REFLEX_DATABASE_URL,
     echo=False,
@@ -143,6 +152,43 @@ def ensure_semester_stage_windows_column() -> None:
         conn.execute(text("ALTER TABLE semesters ADD COLUMN conduct_stage_windows_json TEXT"))
 
 
+def ensure_user_profile_columns() -> None:
+    try:
+        cols = {c["name"] for c in inspect(reflex_engine).get_columns("users")}
+    except Exception:
+        return
+    column_defs = {
+        "phone": "TEXT",
+        "birth_date": "TEXT",
+        "gender": "TEXT",
+        "address": "TEXT",
+    }
+    missing = {name: sql for name, sql in column_defs.items() if name not in cols}
+    if not missing:
+        return
+    with reflex_engine.begin() as conn:
+        for name, sql_type in missing.items():
+            conn.execute(text(f"ALTER TABLE users ADD COLUMN {name} {sql_type}"))
+
+
+def ensure_event_detail_columns() -> None:
+    try:
+        cols = {c["name"] for c in inspect(reflex_engine).get_columns("events")}
+    except Exception:
+        return
+    column_defs = {
+        "start_time": "TEXT",
+        "end_time": "TEXT",
+        "location": "TEXT",
+    }
+    missing = {name: sql for name, sql in column_defs.items() if name not in cols}
+    if not missing:
+        return
+    with reflex_engine.begin() as conn:
+        for name, sql_type in missing.items():
+            conn.execute(text(f"ALTER TABLE events ADD COLUMN {name} {sql_type}"))
+
+
 DEFAULT_CONDUCT_STAGE_LABELS = [
     "Cập nhật, duyệt minh chứng",
     "Sinh viên đánh giá",
@@ -152,10 +198,6 @@ DEFAULT_CONDUCT_STAGE_LABELS = [
 
 
 TEXT_MAP = {
-    "Tran Minh Anh": "Trần Minh Anh",
-    "Le Thu Ha": "Lê Thu Hà",
-    "Nguyen Van Lop Truong": "Nguyễn Văn Lớp Trưởng",
-    "Nguyen Thi Co Van": "Nguyễn Thị Cố Vấn",
     "Quan tri he thong": "Quản trị hệ thống",
     "Cong nghe thong tin": "Công nghệ thông tin",
     "Ky thuat phan mem": "Kỹ thuật phần mềm",
@@ -213,6 +255,13 @@ SUBMISSION_LABELS = {
 }
 
 
+PARTICIPATION_STATUS_LABELS = {
+    ParticipationStatus.PENDING: "Chờ duyệt",
+    ParticipationStatus.APPROVED: "Đã duyệt",
+    ParticipationStatus.REJECTED: "Từ chối",
+}
+
+
 EVIDENCE_STATUS_LABELS = {
     "pending_class": "Chờ duyệt",
     "class_approved": "Đã duyệt",
@@ -233,134 +282,208 @@ CATEGORY_LABELS = {item["key"]: item["label"] for item in EVIDENCE_CATEGORIES}
 
 
 CLASSROOMS = {
-    "D23CQAT04-B": {
-        "advisor_username": "covan",
-        "advisor_name": "Nguyễn Trung Thành",
-        "class_monitor_username": "bancansu",
-        "class_monitor_name": "Nguyễn Văn Lớp Trưởng",
+    "D23CQAT01": {
+        "advisor_username": "CVHT001",
+        "advisor_name": "Cố vấn học tập 001",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
     },
-    "D23CQAT03-B": {
-        "advisor_username": "covan03",
-        "advisor_name": "Trần Thu Hương",
-        "class_monitor_username": "bancansu03",
-        "class_monitor_name": "Lê Đức Thành",
+    "D23CQAT02": {
+        "advisor_username": "CVHT002",
+        "advisor_name": "Cố vấn học tập 002",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
+    },
+    "D23CQCN01": {
+        "advisor_username": "CVHT003",
+        "advisor_name": "Cố vấn học tập 003",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+    },
+    "D23CQCN02": {
+        "advisor_username": "CVHT004",
+        "advisor_name": "Cố vấn học tập 004",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
     },
 }
 
 
-CLASS_MONITOR_USERNAMES = {config["class_monitor_username"] for config in CLASSROOMS.values()}
+CLASS_MONITOR_USERNAMES = {
+    config.get("class_monitor_username", "")
+    for config in CLASSROOMS.values()
+    if config.get("class_monitor_username")
+}
 STUDENT_LIKE_ROLES = [UserRole.STUDENT, UserRole.CLASS_MONITOR]
+REGISTER_FACULTY_OPTIONS = [
+    "An toàn thông tin",
+    "Công nghệ thông tin",
+    "Điện tử viễn thông",
+    "Truyền thông đa phương tiện",
+]
+REGISTER_MAJOR_OPTIONS_BY_FACULTY = {
+    "An toàn thông tin": [
+        "An toàn thông tin",
+        "Công nghệ thông tin",
+    ],
+    "Công nghệ thông tin": [
+        "Công nghệ thông tin",
+        "Kỹ thuật phần mềm",
+        "Hệ thống thông tin",
+    ],
+    "Điện tử viễn thông": [
+        "Điện tử viễn thông",
+        "Internet vạn vật",
+    ],
+    "Truyền thông đa phương tiện": [
+        "Công nghệ đa phương tiện",
+        "Thiết kế và phát triển game",
+    ],
+}
+REGISTER_GENDER_OPTIONS = ["Nam", "Nữ", "Khác"]
+ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL = "Tài khoản hệ thống"
+ROLE_MANAGEMENT_ROLE_ORDER = {
+    UserRole.ADVISOR.value: 0,
+    UserRole.CLASS_MONITOR.value: 1,
+    UserRole.STUDENT.value: 2,
+    UserRole.ADMIN.value: 3,
+}
 
 
-STUDENT_PROFILES = {
-    "b23dccn001": {
-        "student_code": "B23DCAT074",
-        "full_name": "Trần Minh Anh",
-        "class_name": "D23CQAT04-B",
-        "email": "minhanh.b23dcat074@stu.ptit.edu.vn",
-        "phone": "0344 584 578",
+STUDENT_PROFILES: dict[str, dict] = {
+    "B23DCAT001": {
+        "student_code": "B23DCAT001",
+        "full_name": "Nguyễn An Khang",
+        "class_name": "D23CQAT01",
+        "email": "b23dcat001@stu.ptit.edu.vn",
+        "phone": "0901000001",
         "gender": "Nam",
-        "birth_date": "18/10/2005",
-        "status": "Đang học",
-        "faculty": "An toàn thông tin",
-        "major": "An toàn thông tin",
-        "address": "Mộ Lao, Hà Đông, Hà Nội",
-        "citizen_id": "040205017684",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.10, "cpa": 3.18, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.22, "cpa": 3.31, "credits": 16, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.38, "cpa": 3.34, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.28, "cpa": 3.33, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
-    },
-    "b23dccn002": {
-        "student_code": "B23DCAT075",
-        "full_name": "Lê Thu Hà",
-        "class_name": "D23CQAT04-B",
-        "email": "thuha.b23dcat075@stu.ptit.edu.vn",
-        "phone": "0965 224 810",
-        "gender": "Nữ",
-        "birth_date": "21/03/2005",
-        "status": "Đang học",
-        "faculty": "An toàn thông tin",
-        "major": "An toàn thông tin",
-        "address": "Thanh Xuân, Hà Nội",
-        "citizen_id": "011205009999",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 2.74, "cpa": 2.81, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 2.98, "cpa": 2.89, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.11, "cpa": 2.96, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.05, "cpa": 2.99, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
-    },
-    "bancansu": {
-        "student_code": "B23DCAT401",
-        "full_name": "Nguyễn Văn Lớp Trưởng",
-        "class_name": "D23CQAT04-B",
-        "email": "bancansu@ptit.edu.vn",
-        "phone": "0912 000 401",
-        "gender": "Nam",
-        "birth_date": "12/05/2004",
+        "birth_date": "2005-01-12",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Hà Đông, Hà Nội",
         "citizen_id": "",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.20, "cpa": 3.15, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.25, "cpa": 3.22, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.30, "cpa": 3.24, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.28, "cpa": 3.26, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "semester_metrics": {},
     },
-    "bancansu03": {
-        "student_code": "B23DCAT302",
-        "full_name": "Lê Đức Thành",
-        "class_name": "D23CQAT03-B",
-        "email": "bancansu03@ptit.edu.vn",
-        "phone": "0912 000 302",
-        "gender": "Nam",
-        "birth_date": "03/11/2004",
+    "B23DCAT002": {
+        "student_code": "B23DCAT002",
+        "full_name": "Trần Minh Anh",
+        "class_name": "D23CQAT01",
+        "email": "b23dcat002@stu.ptit.edu.vn",
+        "phone": "0901000002",
+        "gender": "Nữ",
+        "birth_date": "2005-03-18",
+        "status": "Đang học",
+        "faculty": "An toàn thông tin",
+        "major": "An toàn thông tin",
+        "address": "Thanh Xuân, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCAT003": {
+        "student_code": "B23DCAT003",
+        "full_name": "Lê Thu Hà",
+        "class_name": "D23CQAT02",
+        "email": "b23dcat003@stu.ptit.edu.vn",
+        "phone": "0901000003",
+        "gender": "Nữ",
+        "birth_date": "2005-06-02",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Cầu Giấy, Hà Nội",
         "citizen_id": "",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.05, "cpa": 3.02, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.12, "cpa": 3.08, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.18, "cpa": 3.11, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.15, "cpa": 3.12, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "semester_metrics": {},
     },
-    "b23dccn003": {
-        "student_code": "B23DCAT102",
+    "B23DCAT004": {
+        "student_code": "B23DCAT004",
         "full_name": "Phạm Gia Hân",
-        "class_name": "D23CQAT03-B",
-        "email": "giahan.b23dcat102@stu.ptit.edu.vn",
-        "phone": "0912 456 321",
+        "class_name": "D23CQAT02",
+        "email": "b23dcat004@stu.ptit.edu.vn",
+        "phone": "0901000004",
         "gender": "Nữ",
-        "birth_date": "02/08/2005",
+        "birth_date": "2005-09-21",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
-        "address": "Thủ Đức, TP. Hồ Chí Minh",
-        "citizen_id": "079205004444",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.42, "cpa": 3.40, "credits": 15, "conduct_rank": "Giỏi"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.31, "cpa": 3.36, "credits": 16, "conduct_rank": "Giỏi"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.48, "cpa": 3.39, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.35, "cpa": 3.38, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "address": "Đống Đa, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN001": {
+        "student_code": "B23DCCN001",
+        "full_name": "Nguyễn Hoàng Nam",
+        "class_name": "D23CQCN01",
+        "email": "b23dccn001@stu.ptit.edu.vn",
+        "phone": "0902000001",
+        "gender": "Nam",
+        "birth_date": "2005-02-14",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Nam Từ Liêm, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN002": {
+        "student_code": "B23DCCN002",
+        "full_name": "Võ Ngọc Linh",
+        "class_name": "D23CQCN01",
+        "email": "b23dccn002@stu.ptit.edu.vn",
+        "phone": "0902000002",
+        "gender": "Nữ",
+        "birth_date": "2005-04-09",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Hoàng Mai, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN003": {
+        "student_code": "B23DCCN003",
+        "full_name": "Đặng Quốc Huy",
+        "class_name": "D23CQCN02",
+        "email": "b23dccn003@stu.ptit.edu.vn",
+        "phone": "0902000003",
+        "gender": "Nam",
+        "birth_date": "2005-07-27",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Long Biên, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN004": {
+        "student_code": "B23DCCN004",
+        "full_name": "Bùi Khánh Vy",
+        "class_name": "D23CQCN02",
+        "email": "b23dccn004@stu.ptit.edu.vn",
+        "phone": "0902000004",
+        "gender": "Nữ",
+        "birth_date": "2005-11-05",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Ba Đình, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
     },
 }
 
 
 AUTO_GPA_CRITERION_TITLE = "Ket qua hoc tap trong ky hoc"
+RISING_SPIRIT_CRITERION_TITLE = "Tinh than vuot kho, phan dau vuon len trong hoc tap"
+STUDY_ACTIVITY_EVENT_CRITERION_TITLE = (
+    "Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo"
+)
+CLASS_MEETING_EVENT_CRITERION_TITLE = (
+    "Thuc hien nghiem tuc cac buoi hop lop/ sinh hoat doan the do Hoc vien/Khoa/Vien, CVHT, Lop/Chi doan to chuc"
+)
+CAREER_WORKSHOP_EVENT_CRITERION_TITLE = "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc"
+CLASS_MONITOR_ROLE_CRITERION_TITLE = "Lop truong, lop pho, bi thu, BCH doan, chu nhiem cau lac bo..."
 EVIDENCE_CRITERION_MAP = {
     "special_achievement": "Sinh vien dat thanh tich dac biet trong hoc tap, ren luyen",
     "positive_promotion": "Tuyen truyen tich cuc hinh anh ve Truong/Khoa tren mang xa hoi",
@@ -405,50 +528,147 @@ DETAIL_FIELDS = {
 }
 
 
-LOGIN_DEMO_ACCOUNTS = {
-    "admin": {"username": DEFAULT_ADMIN_USERNAME, "password": "admin123"},
-    "advisor": {"username": DEFAULT_ADVISOR_USERNAME, "password": "covan123"},
-    "class_monitor": {"username": DEFAULT_CLASS_MONITOR_USERNAME, "password": "bcs123"},
-    "student": {"username": DEFAULT_STUDENT_USERNAME, "password": "student123"},
-}
-
-
 AUTO_EVENT_CRITERIA_TITLES = {
-    "Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo",
-    "Thuc hien nghiem tuc cac buoi hop lop/ sinh hoat doan the do Hoc vien/Khoa/Vien, CVHT, Lop/Chi doan to chuc",
-    "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc",
-    "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de",
+    STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
+    CLASS_MEETING_EVENT_CRITERION_TITLE,
+    CAREER_WORKSHOP_EVENT_CRITERION_TITLE,
 }
+
+
+SEEDED_USERNAMES = {
+    DEFAULT_ADMIN_USERNAME,
+    *(config["advisor_username"] for config in CLASSROOMS.values()),
+    *STUDENT_PROFILES.keys(),
+}
+SUPPRESSED_SEED_USERS_PATH = DATA_DIR / "suppressed_seed_users.json"
 
 
 DEFAULT_ACTIVE_SCORES = {
     "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
     "Ket qua hoc tap trong ky hoc": 0.0,
-    "Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo": 0.0,
+    STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 0.0,
     "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 15.0,
     "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
-    "Thuc hien nghiem tuc cac buoi hop lop/ sinh hoat doan the do Hoc vien/Khoa/Vien, CVHT, Lop/Chi doan to chuc": 0.0,
-    "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc": 0.0,
+    CLASS_MEETING_EVENT_CRITERION_TITLE: 0.0,
+    CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 0.0,
     "Tham gia cong tac xa hoi nhu: hien mau nhan dao, ung ho nguoi ngheo, bao lut": 0.0,
     "Tuyen truyen tich cuc hinh anh ve Truong/Khoa tren mang xa hoi": 0.0,
-    "Lop truong, lop pho, bi thu, BCH doan, chu nhiem cau lac bo...": 0.0,
-    "Thanh vien tham gia cac Cau lac bo duoc ghi nhan hoan thanh nhiem vu...": 0.0,
+    CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
     "Sinh vien dat thanh tich dac biet trong hoc tap, ren luyen": 0.0,
 }
 
 
 VISIBLE_ZEROS = {
     "Ket qua hoc tap trong ky hoc",
-    "Y thuc va thai do tham gia cac hoat dong ngoai khoa, cac su kien lien quan den nghien cuu khoa hoc, hoc thuat, chuyen mon, Cau lac bo",
+    STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
     "Thuc hien quy dinh ve cong tac noi tru, ngoai tru",
-    "Thuc hien nghiem tuc cac buoi hop lop/ sinh hoat doan the do Hoc vien/Khoa/Vien, CVHT, Lop/Chi doan to chuc",
-    "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc",
+    CLASS_MEETING_EVENT_CRITERION_TITLE,
+    CAREER_WORKSHOP_EVENT_CRITERION_TITLE,
     "Tham gia cong tac xa hoi nhu: hien mau nhan dao, ung ho nguoi ngheo, bao lut",
     "Tuyen truyen tich cuc hinh anh ve Truong/Khoa tren mang xa hoi",
-    "Lop truong, lop pho, bi thu, BCH doan, chu nhiem cau lac bo...",
-    "Thanh vien tham gia cac Cau lac bo duoc ghi nhan hoan thanh nhiem vu...",
+    CLASS_MONITOR_ROLE_CRITERION_TITLE,
     "Sinh vien dat thanh tich dac biet trong hoc tap, ren luyen",
 }
+
+
+HISTORICAL_SCORE_PRESETS = [
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 7.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 3.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 3.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 12.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 3.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 7.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 2.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 2.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 2.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 4.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 4.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 3.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 8.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 4.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 13.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 4.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 3.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 2.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 2.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 0.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 8.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 5.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 14.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 4.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 3.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 3.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 3.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 2.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 10.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 5.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 15.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 5.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 5.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 4.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 3.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 3.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 8.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 5.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 0.0,
+    },
+]
 
 
 SEMESTER_STAGE_OVERRIDES = {
@@ -459,93 +679,15 @@ SEMESTER_STAGE_OVERRIDES = {
         (datetime(2026, 4, 17, 0, 0), datetime(2026, 4, 21, 23, 45), "Chủ nhiệm lớp xác nhận"),
     ],
     "Hoc ky 2 nam hoc 2025-2026": [
-        (datetime(2026, 2, 1, 0, 0), datetime(2026, 4, 10, 23, 45), "Cập nhật, duyệt minh chứng"),
-        (datetime(2026, 4, 11, 0, 0), datetime(2026, 4, 17, 23, 45), "Sinh viên đánh giá"),
-        (datetime(2026, 4, 18, 0, 0), datetime(2026, 4, 24, 23, 45), "Ban cán sự đánh giá"),
-        (datetime(2026, 4, 25, 0, 0), datetime(2026, 5, 1, 23, 45), "Chủ nhiệm lớp xác nhận"),
+        (datetime(2026, 2, 1, 0, 0), datetime(2026, 7, 31, 23, 45), "Cập nhật, duyệt minh chứng"),
+        (datetime(2026, 10, 12, 0, 0), datetime(2026, 10, 16, 23, 45), "Sinh viên đánh giá"),
+        (datetime(2026, 10, 17, 0, 0), datetime(2026, 10, 21, 23, 45), "Ban cán sự đánh giá"),
+        (datetime(2026, 10, 22, 0, 0), datetime(2026, 10, 27, 23, 45), "Chủ nhiệm lớp xác nhận"),
     ],
 }
 
 
-def evidence_entry_window_open(semester: Semester) -> bool:
-    return current_window_index(semester) in {0, 1}
-
-
-JOINED_EVENTS = [
-    {
-        "id": "joined-1",
-        "date": "Thứ tư, ngày 12/03/2025",
-        "count": "1",
-        "time": "18:00",
-        "accent": "#b774ff",
-        "title": "Họp lớp: D23CQAT04-B - P102 A2",
-        "type_label": "Họp lớp",
-        "event_name": "Họp lớp: D23CQAT04-B",
-        "start_time": "18:00 12/03/2025",
-        "end_time": "19:45 12/03/2025",
-        "location": "P102 A2",
-        "counts_to_score": "--",
-        "note": "P102 A2, trực tiếp",
-    },
-    {
-        "id": "joined-2",
-        "date": "Thứ tư, ngày 30/07/2025",
-        "count": "1",
-        "time": "20:30",
-        "accent": "#b774ff",
-        "title": "Họp lớp: D23CQAT04-B - Online",
-        "type_label": "Họp lớp",
-        "event_name": "Họp lớp: D23CQAT04-B",
-        "start_time": "20:30 30/07/2025",
-        "end_time": "21:30 30/07/2025",
-        "location": "Online",
-        "counts_to_score": "--",
-        "note": "Google Meet",
-    },
-    {
-        "id": "joined-3",
-        "date": "Chủ nhật, ngày 21/09/2025",
-        "count": "1",
-        "time": "15:18",
-        "accent": "#5bb5e8",
-        "title": "Chung kết Cuộc thi sinh viên với An toàn thông tin CTF 2025 - Hội trường 1, Cơ sở Hà Đông",
-        "type_label": "Cuộc thi",
-        "event_name": "Chung kết Cuộc thi sinh viên với An toàn thông tin CTF 2025",
-        "start_time": "15:18 21/09/2025",
-        "end_time": "17:30 21/09/2025",
-        "location": "Hội trường 1, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Sự kiện trực tiếp",
-    },
-]
-
-
-REGISTERED_EVENT_DETAILS = {
-    "Chien dich Mua he Xanh 2026": {
-        "type_label": "Tình nguyện",
-        "start_time": "08:00 22/06/2026",
-        "end_time": "11:30 22/06/2026",
-        "location": "Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Cộng tối đa 5 điểm tiêu chí hoạt động xã hội",
-    },
-    "Truyen thong tuyen sinh PTIT 2026": {
-        "type_label": "Truyền thông",
-        "start_time": "19:30 10/05/2026",
-        "end_time": "21:00 10/05/2026",
-        "location": "Online / Facebook",
-        "counts_to_score": "Có",
-        "note": "Tham gia chia sẻ bài truyền thông tuyển sinh của PTIT",
-    },
-    "Ngay hoi viec lam Cyber Security 2026": {
-        "type_label": "Hội thảo việc làm",
-        "start_time": "09:00 18/04/2026",
-        "end_time": "11:30 18/04/2026",
-        "location": "Hội trường A2, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Mỗi sự kiện được tính 1 điểm, tối đa theo tiêu chí.",
-    },
-}
+REGISTERED_EVENT_DETAILS: dict[str, dict[str, str]] = {}
 
 
 @contextmanager
@@ -571,53 +713,74 @@ def role_label(role: str | None) -> str:
     return ROLE_LABELS.get(role or "", role or "")
 
 
-def public_upload_href(file_path: str | None) -> str:
-    upload_name = public_upload_name(file_path)
-    if not upload_name:
-        return ""
-    return f"{UPLOADS_URL_PREFIX}/{upload_name}"
-
-
-def _resolve_saved_upload(file_path: str | None) -> Path | None:
-    raw = (file_path or "").strip()
-    if not raw:
-        return None
-    path = Path(raw)
-    candidates: list[Path] = []
-    if path.is_absolute():
-        candidates.append(path)
-    else:
-        filename = path.name
-        candidates.extend(
-            [
-                REFLEX_UPLOADS_DIR / filename,
-                UPLOADS_DIR / filename,
-                DATA_DIR / raw,
-            ]
-        )
-    for candidate in candidates:
-        try:
-            resolved = candidate.resolve()
-        except Exception:
-            continue
-        if resolved.exists() and resolved.is_file():
-            return resolved
-    return None
-
-
-def public_upload_name(file_path: str | None) -> str:
-    source = _resolve_saved_upload(file_path)
-    if not source:
-        return ""
-    target = (REFLEX_UPLOADS_DIR / source.name).resolve()
-    if source != target and not target.exists():
-        shutil.copy2(source, target)
-    return target.name
-
-
 def _clean_optional(value: str | None) -> str | None:
     cleaned = (value or "").strip()
     return cleaned or None
+
+
+def normalize_birth_date_input(value: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    for parser in (date.fromisoformat,):
+        try:
+            return parser(raw).isoformat()
+        except ValueError:
+            pass
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            pass
+    raise ValueError("Ngày sinh không hợp lệ.")
+
+
+def format_birth_date_display(value: str | None) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    try:
+        return datetime.strptime(normalize_birth_date_input(raw), "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return raw
+
+
+def load_suppressed_seed_usernames() -> set[str]:
+    if not SUPPRESSED_SEED_USERS_PATH.exists():
+        return set()
+    try:
+        data = json.loads(SUPPRESSED_SEED_USERS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    if not isinstance(data, list):
+        return set()
+    return {str(item).strip() for item in data if str(item).strip()}
+
+
+def ensure_data_dir_exists() -> None:
+    if DATA_DIR.is_dir():
+        return
+    if DATA_DIR.exists():
+        raise NotADirectoryError(f"Đường dẫn dữ liệu không phải thư mục: {DATA_DIR}")
+    raise FileNotFoundError(f"Không tìm thấy thư mục dữ liệu: {DATA_DIR}. Hãy tự tạo thư mục 'data' trước khi chạy ứng dụng.")
+
+
+def save_suppressed_seed_usernames(usernames: set[str]) -> None:
+    ensure_data_dir_exists()
+    SUPPRESSED_SEED_USERS_PATH.write_text(
+        json.dumps(sorted(usernames), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def auto_event_criteria(session: Session) -> list[Criterion]:
+    return list(
+        session.scalars(
+            select(Criterion)
+            .where(Criterion.title.in_(AUTO_EVENT_CRITERIA_TITLES))
+            .order_by(Criterion.group_id, Criterion.display_order, Criterion.id)
+        )
+    )
 
 
 def format_points(value: float | int | None, hide_zero: bool = False) -> str:
@@ -654,6 +817,104 @@ def conduct_grade_label(total: float) -> str:
     if total >= 35:
         return "Trung bình"
     return "Yếu"
+
+
+def _rounded_clamp(value: float | int | None, min_points: float, max_points: float) -> float:
+    parsed = float(value or 0.0)
+    return round(max(min_points, min(parsed, max_points)), 2)
+
+
+def sync_criteria_blueprint(session: Session) -> None:
+    groups = list(
+        session.scalars(select(CriterionGroup).options(joinedload(CriterionGroup.criteria)).order_by(CriterionGroup.display_order)).unique()
+    )
+    groups_by_title = {group.title: group for group in groups}
+    expected_group_titles = {str(group_blueprint["title"]) for group_blueprint in CRITERION_BLUEPRINT}
+    obsolete_groups = [group for group in groups if group.title not in expected_group_titles]
+    obsolete_criteria: list[Criterion] = []
+
+    for group_order, group_blueprint in enumerate(CRITERION_BLUEPRINT, start=1):
+        group_title = str(group_blueprint["title"])
+        group = groups_by_title.get(group_title)
+        if group is None:
+            group = CriterionGroup(title=group_title, display_order=group_order, max_points=float(group_blueprint["max_points"]))
+            session.add(group)
+            session.flush()
+        group.display_order = group_order
+        group.max_points = float(group_blueprint["max_points"])
+
+        existing_criteria = {criterion.title: criterion for criterion in group.criteria}
+        expected_titles: set[str] = set()
+        for criterion_order, (title, description, min_points, max_points) in enumerate(group_blueprint["criteria"], start=1):
+            expected_titles.add(title)
+            criterion = existing_criteria.get(title)
+            if criterion is None:
+                criterion = Criterion(
+                    group_id=group.id,
+                    title=title,
+                    description=description,
+                    min_points=float(min_points),
+                    max_points=float(max_points),
+                    display_order=criterion_order,
+                )
+                session.add(criterion)
+                session.flush()
+            criterion.group_id = group.id
+            criterion.description = description
+            criterion.min_points = float(min_points)
+            criterion.max_points = float(max_points)
+            criterion.display_order = criterion_order
+
+        obsolete_criteria.extend([criterion for criterion in group.criteria if criterion.title not in expected_titles])
+
+    obsolete_criterion_ids = {criterion.id for criterion in obsolete_criteria if criterion.id}
+    for group in obsolete_groups:
+        obsolete_criterion_ids.update(criterion.id for criterion in group.criteria if criterion.id)
+
+    if obsolete_criterion_ids:
+        for event in list(session.scalars(select(Event).where(Event.criterion_id.in_(obsolete_criterion_ids)))):
+            session.delete(event)
+        for score in list(session.scalars(select(LegacyScoreEntry).where(LegacyScoreEntry.criterion_id.in_(obsolete_criterion_ids)))):
+            session.delete(score)
+        for score in list(session.scalars(select(ReflexScore).where(ReflexScore.criterion_id.in_(obsolete_criterion_ids)))):
+            session.delete(score)
+
+    for criterion in obsolete_criteria:
+        session.delete(criterion)
+    for group in obsolete_groups:
+        session.delete(group)
+    session.flush()
+
+
+def sync_reflex_scores_with_criteria(session: Session, criteria: list[Criterion]) -> None:
+    criteria_by_id = {criterion.id: criterion for criterion in criteria}
+    submissions = list(
+        session.scalars(
+            select(ReflexSubmission).options(joinedload(ReflexSubmission.scores).joinedload(ReflexScore.criterion))
+        ).unique()
+    )
+    for submission in submissions:
+        score_map = {score.criterion_id: score for score in submission.scores}
+        for criterion in criteria:
+            if criterion.id not in score_map:
+                session.add(
+                    ReflexScore(
+                        submission_id=submission.id,
+                        criterion_id=criterion.id,
+                        self_score=0.0,
+                        class_score=0.0,
+                        advisor_score=0.0,
+                    )
+                )
+        for score in list(submission.scores):
+            criterion = criteria_by_id.get(score.criterion_id)
+            if criterion is None:
+                session.delete(score)
+                continue
+            score.self_score = _rounded_clamp(score.self_score, criterion.min_points, criterion.max_points)
+            score.class_score = _rounded_clamp(score.class_score, criterion.min_points, criterion.max_points)
+            score.advisor_score = _rounded_clamp(score.advisor_score, criterion.min_points, criterion.max_points)
+    session.flush()
 
 
 def ensure_semester(
@@ -693,7 +954,7 @@ def ensure_user(
     if user:
         # Không ghi đè role: mỗi lần load app đều chạy ensure_reflex_demo_data(); nếu sync role
         # từ seed sẽ xóa phân quyền đã lưu (admin/cố vấn đổi quyền xong refresh là mất).
-        user.password_hash = _store_password(password)
+        user.password_hash = _store_password_plain(password)
         user.full_name = full_name
         for key, value in extra.items():
             setattr(user, key, value)
@@ -701,7 +962,7 @@ def ensure_user(
 
     user = User(
         username=username,
-        password_hash=_store_password(password),
+        password_hash=_store_password_plain(password),
         full_name=full_name,
         role=role,
         **extra,
@@ -720,6 +981,10 @@ def register_user_account(
     class_name: str,
     faculty: str | None = None,
     major: str | None = None,
+    phone: str | None = None,
+    birth_date: str | None = None,
+    gender: str | None = None,
+    address: str | None = None,
 ) -> dict[str, str | int]:
     ensure_reflex_demo_data()
     username = (username or "").strip()
@@ -728,6 +993,12 @@ def register_user_account(
     student_code = (student_code or "").strip()
     email = (email or "").strip().lower()
     class_name = (class_name or "").strip()
+    resolved_faculty = _clean_optional(faculty)
+    resolved_major = _clean_optional(major)
+    resolved_phone = _clean_optional(phone)
+    resolved_gender = _clean_optional(gender)
+    resolved_address = _clean_optional(address)
+    normalized_birth_date = normalize_birth_date_input(birth_date)
     if not username:
         raise ValueError("Tên đăng nhập không được để trống.")
     if not password:
@@ -740,10 +1011,25 @@ def register_user_account(
         raise ValueError("Email không được để trống.")
     if not class_name:
         raise ValueError("Lớp không được để trống.")
-
-    class_defaults = CLASSROOMS.get(class_name, {})
-    resolved_faculty = _clean_optional(faculty) or class_defaults.get("faculty")
-    resolved_major = _clean_optional(major) or class_defaults.get("major")
+    if not resolved_faculty:
+        raise ValueError("Hãy chọn khoa.")
+    if resolved_faculty not in REGISTER_FACULTY_OPTIONS:
+        raise ValueError("Khoa được chọn không hợp lệ.")
+    allowed_majors = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(resolved_faculty, [])
+    if not resolved_major:
+        raise ValueError("Hãy chọn ngành.")
+    if allowed_majors and resolved_major not in allowed_majors:
+        raise ValueError("Ngành được chọn không hợp lệ.")
+    if not resolved_phone:
+        raise ValueError("Số điện thoại không được để trống.")
+    if not normalized_birth_date:
+        raise ValueError("Ngày sinh không được để trống.")
+    if not resolved_gender:
+        raise ValueError("Hãy chọn giới tính.")
+    if resolved_gender not in REGISTER_GENDER_OPTIONS:
+        raise ValueError("Giới tính được chọn không hợp lệ.")
+    if not resolved_address:
+        raise ValueError("Địa chỉ không được để trống.")
 
     with get_reflex_session() as session:
         if session.scalar(select(User).where(User.username == username)):
@@ -754,7 +1040,7 @@ def register_user_account(
             raise ValueError("Email đã tồn tại.")
         user = User(
             username=username,
-            password_hash=_store_password(password),
+            password_hash=_store_password_plain(password),
             full_name=full_name,
             role=UserRole.STUDENT,
             student_code=student_code,
@@ -762,6 +1048,10 @@ def register_user_account(
             class_name=class_name,
             faculty=resolved_faculty,
             major=resolved_major,
+            phone=resolved_phone,
+            birth_date=normalized_birth_date,
+            gender=resolved_gender,
+            address=resolved_address,
         )
         session.add(user)
         session.flush()
@@ -771,6 +1061,92 @@ def register_user_account(
             "role": user.role.value,
             "role_label": role_label(user.role.value),
         }
+
+
+def update_user_profile(
+    current_user_id: int,
+    full_name: str,
+    email: str,
+    phone: str,
+    birth_date: str,
+    gender: str,
+    address: str,
+) -> None:
+    ensure_reflex_demo_data()
+    resolved_full_name = (full_name or "").strip()
+    resolved_email = (email or "").strip().lower()
+    resolved_phone = (phone or "").strip()
+    resolved_gender = (gender or "").strip()
+    resolved_address = (address or "").strip()
+    normalized_birth_date = normalize_birth_date_input(birth_date)
+    if not resolved_full_name:
+        raise ValueError("Họ tên không được để trống.")
+    if not resolved_email:
+        raise ValueError("Email không được để trống.")
+    if not resolved_phone:
+        raise ValueError("Số điện thoại không được để trống.")
+    if not normalized_birth_date:
+        raise ValueError("Ngày sinh không được để trống.")
+    if resolved_gender not in REGISTER_GENDER_OPTIONS:
+        raise ValueError("Giới tính được chọn không hợp lệ.")
+    if not resolved_address:
+        raise ValueError("Địa chỉ không được để trống.")
+
+    with get_reflex_session() as session:
+        user = session.get(User, current_user_id)
+        if not user:
+            raise ValueError("Không tìm thấy tài khoản.")
+        conflict = session.scalar(select(User).where(User.email == resolved_email, User.id != user.id))
+        if conflict:
+            raise ValueError("Email đã được tài khoản khác sử dụng.")
+        user.full_name = resolved_full_name
+        user.email = resolved_email
+        user.phone = resolved_phone
+        user.birth_date = normalized_birth_date
+        user.gender = resolved_gender
+        user.address = resolved_address
+
+
+def save_student_gpa(current_user_id: int, target_student_id: int, semester_id: int, gpa_value: str) -> None:
+    ensure_reflex_demo_data()
+    raw_value = (gpa_value or "").strip().replace(",", ".")
+    try:
+        gpa = float(raw_value)
+    except ValueError as exc:
+        raise ValueError("GPA không hợp lệ.") from exc
+    if gpa < 0 or gpa > 4:
+        raise ValueError("GPA phải nằm trong khoảng 0 đến 4.")
+
+    with get_reflex_session() as session:
+        current_user = session.get(User, current_user_id)
+        target_student = session.get(User, target_student_id)
+        semester = session.get(Semester, semester_id)
+        if not current_user or current_user.role != UserRole.ADVISOR:
+            raise ValueError("Chỉ cố vấn học tập được nhập GPA.")
+        if not target_student or target_student.role not in STUDENT_LIKE_ROLES:
+            raise ValueError("Không tìm thấy sinh viên cần nhập GPA.")
+        if not semester:
+            raise ValueError("Không tìm thấy học kỳ.")
+        if not can_manage_student(current_user, target_student):
+            raise ValueError("Sinh viên này không thuộc lớp do bạn phụ trách.")
+
+        metric = session.scalar(
+            select(ReflexSemesterMetric).where(
+                ReflexSemesterMetric.student_id == target_student.id,
+                ReflexSemesterMetric.semester_id == semester.id,
+            )
+        )
+        if not metric:
+            metric = ReflexSemesterMetric(student_id=target_student.id, semester_id=semester.id, gpa=round(gpa, 2))
+            session.add(metric)
+        else:
+            metric.gpa = round(gpa, 2)
+            metric.updated_at = current_app_time()
+
+        criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
+        submission = ensure_reflex_submission(session, target_student, semester, criteria, status="draft", copy_legacy=True)
+        apply_automatic_scores(session, submission, target_student, semester)
+        recompute_totals(submission)
 
 
 def load_payload(evidence: ReflexEvidence) -> dict[str, str]:
@@ -907,8 +1283,9 @@ def update_semester_stage_windows(current_user_id: int, semester_id: int, rows: 
 
 
 def current_window_index(semester: Semester) -> int:
+    now = current_app_time()
     for index, (start_time, end_time, _) in enumerate(semester_stage_windows(semester)):
-        if start_time <= DEMO_NOW <= end_time:
+        if start_time <= now <= end_time:
             return index
     return -1
 
@@ -916,6 +1293,24 @@ def current_window_index(semester: Semester) -> int:
 def semester_evaluation_calendar_open(semester: Semester) -> bool:
     """Có ít nhất một mốc thời gian đánh giá đang mở cho học kỳ này."""
     return current_window_index(semester) >= 0
+
+
+def timeline_stage_index(semester: Semester) -> int:
+    windows = semester_stage_windows(semester)
+    if not windows:
+        return -1
+    now = current_app_time()
+    if now < windows[0][0]:
+        return -1
+    last_index = -1
+    for index, (start_time, end_time, _) in enumerate(windows):
+        if now >= start_time:
+            last_index = index
+        if start_time <= now <= end_time:
+            return index
+        if now < start_time:
+            return last_index
+    return last_index
 
 
 def progress_count(status: str) -> int:
@@ -929,36 +1324,15 @@ def progress_count(status: str) -> int:
 
 def timeline_from_submission(semester: Semester, status: str) -> list[dict[str, str]]:
     windows = semester_stage_windows(semester)
-    n = len(windows)
-    time_idx = current_window_index(semester)
-    if time_idx < 0:
-        return [
-            {
-                "id": str(index),
-                "start": start_time.strftime("%d/%m/%Y %H:%M"),
-                "end": end_time.strftime("%d/%m/%Y %H:%M"),
-                "label": label,
-                "state": "upcoming",
-                "line_after": "upcoming",
-            }
-            for index, (start_time, end_time, label) in enumerate(windows)
-        ]
-    wf = progress_count(status)
-    completed_count = min(n, max(wf, time_idx))
+    now = current_app_time()
     timeline: list[dict[str, str]] = []
     for index, (start_time, end_time, label) in enumerate(windows):
-        if completed_count >= n:
+        if now > end_time:
             state = "done"
-        elif index < completed_count:
-            state = "done"
-        elif index == completed_count:
+        elif start_time <= now <= end_time:
             state = "current"
         else:
             state = "upcoming"
-        if completed_count >= n:
-            line_done = index < n - 1
-        else:
-            line_done = index < n - 1 and index < completed_count
         timeline.append(
             {
                 "id": str(index),
@@ -966,7 +1340,7 @@ def timeline_from_submission(semester: Semester, status: str) -> list[dict[str, 
                 "end": end_time.strftime("%d/%m/%Y %H:%M"),
                 "label": label,
                 "state": state,
-                "line_after": "done" if line_done else "upcoming",
+                "line_after": "done" if now > end_time else "upcoming",
             }
         )
     return timeline
@@ -979,8 +1353,6 @@ def is_outside_score_window(current_user: User, target_student: User, semester: 
     win = current_window_index(semester)
     if win < 0:
         return True
-    if win == 0:
-        return False
     if current_user.role == UserRole.STUDENT:
         return win != 1
     if current_user.role == UserRole.CLASS_MONITOR:
@@ -1009,14 +1381,29 @@ def _list_total_from_submission(submission: ReflexSubmission | None) -> str:
     return format_points(effective_conduct_total(submission))
 
 
-def serialize_student(user: User, submission: ReflexSubmission | None = None) -> dict[str, str | int]:
+def serialize_student(
+    user: User,
+    submission: ReflexSubmission | None = None,
+    pending_evidence_count: int = 0,
+    pending_event_count: int = 0,
+    gpa: str = "",
+) -> dict[str, str | int | bool]:
     eff = effective_conduct_total(submission)
+    status = submission.status if submission else ""
     return {
         "id": user.id,
+        "full_name": vi(user.full_name),
+        "student_code": user.student_code or "",
+        "class_name": user.class_name or "",
         "label": f"{vi(user.full_name)} - {user.student_code or ''}",
         "score_total": _list_total_from_submission(submission),
-        "score_status_label": SUBMISSION_LABELS.get(submission.status, submission.status) if submission else "Chưa có phiếu",
+        "score_status": status,
+        "score_status_label": SUBMISSION_LABELS.get(status, status) if submission else "Chưa có phiếu",
         "conduct_grade": conduct_grade_label(eff) if submission else "—",
+        "gpa": gpa,
+        "can_direct_review_score": status == "student_submitted",
+        "pending_evidence_count": pending_evidence_count,
+        "pending_event_count": pending_event_count,
     }
 
 
@@ -1026,6 +1413,7 @@ def role_assignment_permissions(current_user: User, target_user: User) -> dict[s
         "can_set_class_monitor": False,
         "can_set_advisor": False,
         "can_set_admin": False,
+        "can_delete_account": False,
     }
     if current_user.id == target_user.id:
         return permissions
@@ -1035,6 +1423,7 @@ def role_assignment_permissions(current_user: User, target_user: User) -> dict[s
             "can_set_class_monitor": True,
             "can_set_advisor": True,
             "can_set_admin": True,
+            "can_delete_account": True,
         }
     if current_user.role != UserRole.ADVISOR:
         return permissions
@@ -1042,8 +1431,10 @@ def role_assignment_permissions(current_user: User, target_user: User) -> dict[s
         return permissions
     if target_user.role == UserRole.STUDENT:
         permissions["can_set_class_monitor"] = True
+        permissions["can_delete_account"] = True
     elif target_user.role == UserRole.CLASS_MONITOR:
         permissions["can_set_student"] = True
+        permissions["can_delete_account"] = True
     return permissions
 
 
@@ -1053,7 +1444,7 @@ def role_management_scope_users(session: Session, current_user: User) -> list[Us
             session.scalars(
                 select(User)
                 .where(User.role.in_([UserRole.ADMIN, UserRole.ADVISOR, UserRole.CLASS_MONITOR, UserRole.STUDENT]))
-                .order_by(User.class_name, User.student_code, User.id)
+                .order_by(User.id)
             )
         )
     if current_user.role == UserRole.ADVISOR:
@@ -1061,16 +1452,60 @@ def role_management_scope_users(session: Session, current_user: User) -> list[Us
         return list(
             session.scalars(
                 select(User)
-                .where(User.role.in_([UserRole.STUDENT, UserRole.CLASS_MONITOR]), User.class_name.in_(managed_classes))
-                .order_by(User.class_name, User.student_code, User.id)
+                .where(
+                    (User.id == current_user.id)
+                    | (
+                        User.role.in_([UserRole.STUDENT, UserRole.CLASS_MONITOR])
+                        & User.class_name.in_(managed_classes)
+                    )
+                )
+                .order_by(User.id)
             )
         )
     return []
 
 
-def build_role_management_rows(session: Session, current_user: User) -> list[dict[str, str | int | bool]]:
-    rows: list[dict[str, str | int | bool]] = []
-    for user in role_management_scope_users(session, current_user):
+def role_management_group_label(user: User) -> str:
+    if user.role == UserRole.ADMIN or not (user.class_name or "").strip():
+        return ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL
+    return user.class_name or ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL
+
+
+def role_management_sort_key(user: User) -> tuple[int, str, int, str, int]:
+    group_label = role_management_group_label(user)
+    return (
+        1 if group_label == ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL else 0,
+        vi(group_label),
+        ROLE_MANAGEMENT_ROLE_ORDER.get(user.role.value, 99),
+        vi(user.full_name).casefold(),
+        int(user.id),
+    )
+
+
+def role_management_role_options(current_user: User, target_user: User, perms: dict[str, bool]) -> list[str]:
+    if current_user.id == target_user.id:
+        return [role_label(target_user.role.value)]
+    allowed_roles = {target_user.role.value}
+    if perms["can_set_student"]:
+        allowed_roles.add(UserRole.STUDENT.value)
+    if perms["can_set_class_monitor"]:
+        allowed_roles.add(UserRole.CLASS_MONITOR.value)
+    if perms["can_set_advisor"]:
+        allowed_roles.add(UserRole.ADVISOR.value)
+    if perms["can_set_admin"]:
+        allowed_roles.add(UserRole.ADMIN.value)
+    ordered_roles = sorted(allowed_roles, key=lambda item: ROLE_MANAGEMENT_ROLE_ORDER.get(item, 99))
+    return [role_label(item) for item in ordered_roles]
+
+
+def build_role_management_classes(rows: list[dict[str, str | int | bool | list[str]]]) -> list[str]:
+    labels = {str(row.get("management_group_label", "")).strip() for row in rows if str(row.get("management_group_label", "")).strip()}
+    return sorted(labels, key=lambda item: (item == ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL, item.casefold()))
+
+
+def build_role_management_rows(session: Session, current_user: User) -> list[dict[str, str | int | bool | list[str]]]:
+    rows: list[dict[str, str | int | bool | list[str]]] = []
+    for user in sorted(role_management_scope_users(session, current_user), key=role_management_sort_key):
         perms = role_assignment_permissions(current_user, user)
         rows.append(
             {
@@ -1083,10 +1518,16 @@ def build_role_management_rows(session: Session, current_user: User) -> list[dic
                 "role": user.role.value,
                 "role_label": role_label(user.role.value),
                 "is_self": user.id == current_user.id,
+                "management_group_label": role_management_group_label(user),
+                "role_select_options": role_management_role_options(current_user, user, perms),
+                "role_select_disabled": user.id == current_user.id or not any(
+                    [perms["can_set_student"], perms["can_set_class_monitor"], perms["can_set_advisor"], perms["can_set_admin"]]
+                ),
                 "can_set_student": perms["can_set_student"],
                 "can_set_class_monitor": perms["can_set_class_monitor"],
                 "can_set_advisor": perms["can_set_advisor"],
                 "can_set_admin": perms["can_set_admin"],
+                "can_delete_account": perms["can_delete_account"],
             }
         )
     return rows
@@ -1129,20 +1570,55 @@ def can_manage_student(current_user: User, target_student: User) -> bool:
 def profile_for_user(user: User) -> dict[str, str | dict]:
     profile = STUDENT_PROFILES.get(user.username, {})
     return {
-        "student_code": profile.get("student_code", user.student_code or ""),
-        "full_name": vi(profile.get("full_name", user.full_name)),
-        "class_name": profile.get("class_name", user.class_name or ""),
-        "email": profile.get("email", user.email or ""),
-        "phone": profile.get("phone", ""),
-        "gender": profile.get("gender", ""),
-        "birth_date": profile.get("birth_date", ""),
+        "student_code": user.student_code or profile.get("student_code", ""),
+        "full_name": vi(user.full_name or profile.get("full_name", "")),
+        "class_name": user.class_name or profile.get("class_name", ""),
+        "email": user.email or profile.get("email", ""),
+        "phone": user.phone or profile.get("phone", ""),
+        "gender": user.gender or profile.get("gender", ""),
+        "birth_date": user.birth_date or profile.get("birth_date", ""),
         "status": profile.get("status", "Đang học"),
-        "faculty": profile.get("faculty", user.faculty or ""),
-        "major": profile.get("major", user.major or ""),
-        "address": profile.get("address", ""),
+        "faculty": user.faculty or profile.get("faculty", ""),
+        "major": user.major or profile.get("major", ""),
+        "address": user.address or profile.get("address", ""),
         "citizen_id": profile.get("citizen_id", ""),
         "semester_metrics": profile.get("semester_metrics", {}),
     }
+
+
+def semester_metrics_for_user(session: Session, user: User, semester: Semester) -> dict[str, float | str]:
+    metrics = dict(profile_for_user(user)["semester_metrics"].get(semester.name, {}))
+    override = session.scalar(
+        select(ReflexSemesterMetric).where(
+            ReflexSemesterMetric.student_id == user.id,
+            ReflexSemesterMetric.semester_id == semester.id,
+        )
+    )
+    if override:
+        metrics["gpa"] = float(override.gpa or 0.0)
+    return metrics
+
+
+def normalize_event_datetime_input(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    for pattern in ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%H:%M %d/%m/%Y"):
+        try:
+            return datetime.strptime(raw, pattern).strftime("%H:%M %d/%m/%Y")
+        except ValueError:
+            continue
+    return raw
+
+
+def parse_event_datetime(value: str) -> datetime | None:
+    normalized = normalize_event_datetime_input(value)
+    for pattern in ("%H:%M %d/%m/%Y",):
+        try:
+            return datetime.strptime(normalized, pattern)
+        except ValueError:
+            continue
+    return None
 
 
 def class_contacts_for_student(session: Session, class_name: str) -> tuple[str, str]:
@@ -1164,7 +1640,8 @@ def class_contacts_for_student(session: Session, class_name: str) -> tuple[str, 
 
 def student_profile_snapshot(session: Session, target_student: User, semester_name: str) -> dict[str, str]:
     profile = profile_for_user(target_student)
-    metrics = profile["semester_metrics"].get(semester_name, {})
+    semester = session.scalar(select(Semester).where(Semester.name == semester_name))
+    metrics = semester_metrics_for_user(session, target_student, semester) if semester else dict(profile["semester_metrics"].get(semester_name, {}))
     advisor_name, class_monitor_name = class_contacts_for_student(session, str(profile["class_name"]))
     return {
         "student_code": str(profile["student_code"]),
@@ -1173,7 +1650,8 @@ def student_profile_snapshot(session: Session, target_student: User, semester_na
         "email": str(profile["email"]),
         "phone": str(profile["phone"]),
         "gender": str(profile["gender"]),
-        "birth_date": str(profile["birth_date"]),
+        "birth_date": format_birth_date_display(str(profile["birth_date"])),
+        "birth_date_input": normalize_birth_date_input(str(profile["birth_date"])),
         "status": str(profile["status"]),
         "faculty": str(profile["faculty"]),
         "major": str(profile["major"]),
@@ -1182,8 +1660,6 @@ def student_profile_snapshot(session: Session, target_student: User, semester_na
         "advisor_name": advisor_name,
         "class_monitor_name": class_monitor_name,
         "gpa": format_points(metrics.get("gpa", 0.0)),
-        "cpa": format_points(metrics.get("cpa", 0.0)),
-        "credits": format_points(metrics.get("credits", 0)),
         "conduct_rank": str(metrics.get("conduct_rank", "Chưa xếp loại")),
     }
 
@@ -1203,15 +1679,48 @@ def previous_semester_metrics(student: User, semester_name: str) -> dict[str, fl
 def gpa_to_conduct_score(gpa: float | int | None) -> float:
     if gpa is None:
         return 0.0
-    return round(max(0.0, min(10.0, (float(gpa) / 4.0) * 10.0)), 2)
+    gpa_value = float(gpa or 0.0)
+    if gpa_value > 3.6:
+        return 10.0
+    if gpa_value > 3.2:
+        return 8.0
+    if gpa_value > 3.0:
+        return 6.0
+    return 0.0
 
 
 def rising_spirit_score(student: User, semester_name: str) -> float:
-    current_metrics = profile_for_user(student)["semester_metrics"].get(semester_name, {})
-    previous_metrics = previous_semester_metrics(student, semester_name)
-    current_gpa = float(current_metrics.get("gpa", 0.0) or 0.0)
-    previous_gpa = float(previous_metrics.get("gpa", 0.0) or 0.0)
-    return 1.0 if current_gpa > previous_gpa and previous_gpa > 0 else 0.0
+    return 1.0
+
+
+def student_window_deadline_passed(semester: Semester) -> bool:
+    windows = semester_stage_windows(semester)
+    if len(windows) < 2:
+        return False
+    return current_app_time() > windows[1][1]
+
+
+def auto_submit_submission_as_student(submission: ReflexSubmission) -> None:
+    if submission.status != "draft":
+        return
+    now = current_app_time()
+    submission.status = "student_submitted"
+    submission.submitted_at = submission.submitted_at or now
+    for score in submission.scores:
+        score.class_score = score.self_score
+        score.advisor_score = score.self_score
+    recompute_totals(submission)
+
+
+def auto_submit_overdue_student_submissions(session: Session, semester: Semester) -> None:
+    if not student_window_deadline_passed(semester):
+        return
+    criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
+    students = list(session.scalars(select(User).where(User.role.in_(STUDENT_LIKE_ROLES)).order_by(User.id)))
+    for student in students:
+        submission = ensure_reflex_submission(session, student, semester, criteria, status="draft", copy_legacy=True)
+        apply_automatic_scores(session, submission, student, semester)
+        auto_submit_submission_as_student(submission)
 
 
 def note_permissions(current_user: User, target_student: User, submission: ReflexSubmission, semester: Semester) -> dict[str, bool]:
@@ -1254,13 +1763,24 @@ def approved_evidence_counts(session: Session, student_id: int, semester_id: int
     )
     for evidence in evidences:
         criterion_title = EVIDENCE_CRITERION_MAP.get(evidence.category_key)
-        if criterion_title:
+        if criterion_title and evidence.category_key != "residence":
             counts[criterion_title] = counts.get(criterion_title, 0) + 1
     return counts
 
 
-def approved_event_counts(session: Session, student_id: int, semester_id: int) -> dict[int, int]:
-    counts: dict[int, int] = {}
+def residence_compliance_score(session: Session, student_id: int, semester_id: int) -> float:
+    residence_evidence = session.scalar(
+        select(ReflexEvidence.id).where(
+            ReflexEvidence.student_id == student_id,
+            ReflexEvidence.semester_id == semester_id,
+            ReflexEvidence.category_key == "residence",
+        )
+    )
+    return 0.0 if residence_evidence else -5.0
+
+
+def approved_event_counts(session: Session, student_id: int, semester_id: int) -> dict[int, float]:
+    counts: dict[int, float] = {}
     participations = list(
         session.scalars(
             select(EventParticipation)
@@ -1275,12 +1795,12 @@ def approved_event_counts(session: Session, student_id: int, semester_id: int) -
         criterion = event.criterion
         if not criterion or criterion.title not in AUTO_EVENT_CRITERIA_TITLES:
             continue
-        counts[event.criterion_id] = counts.get(event.criterion_id, 0) + 1
+        counts[event.criterion_id] = round(counts.get(event.criterion_id, 0.0) + float(event.points or 0.0), 2)
     return counts
 
 
 def auto_locked_titles(session: Session, semester_id: int) -> set[str]:
-    titles = {AUTO_GPA_CRITERION_TITLE, "Tinh than vuot kho, phan dau vuon len trong hoc tap", *EVIDENCE_CRITERION_MAP.values()}
+    titles = {AUTO_GPA_CRITERION_TITLE, RISING_SPIRIT_CRITERION_TITLE, CLASS_MONITOR_ROLE_CRITERION_TITLE, *EVIDENCE_CRITERION_MAP.values()}
     titles.update(
         criterion.title
         for criterion in session.scalars(
@@ -1296,11 +1816,11 @@ def apply_automatic_scores(
     session: Session, submission: ReflexSubmission, target_student: User, semester: Semester | None = None
 ) -> None:
     sem = semester if semester is not None else submission.semester
-    win = current_window_index(sem) if sem else -1
     semester_name = sem.name if sem else ""
-    metrics = profile_for_user(target_student)["semester_metrics"].get(semester_name, {})
+    metrics = semester_metrics_for_user(session, target_student, sem) if sem else {}
     evidence_counts = approved_evidence_counts(session, target_student.id, submission.semester_id)
     event_counts = approved_event_counts(session, target_student.id, submission.semester_id)
+    residence_score = residence_compliance_score(session, target_student.id, submission.semester_id)
     for score in submission.scores:
         criterion = score.criterion
         if not criterion:
@@ -1309,31 +1829,53 @@ def apply_automatic_scores(
         auto_value: float | None = None
         if title == AUTO_GPA_CRITERION_TITLE:
             auto_value = gpa_to_conduct_score(metrics.get("gpa", 0.0))
-        elif title == "Tinh than vuot kho, phan dau vuon len trong hoc tap":
+        elif title == RISING_SPIRIT_CRITERION_TITLE:
             auto_value = rising_spirit_score(target_student, semester_name)
+        elif title == EVIDENCE_CRITERION_MAP["residence"]:
+            auto_value = residence_score
+        elif title == CLASS_MONITOR_ROLE_CRITERION_TITLE:
+            auto_value = float(criterion.max_points) if target_student.role == UserRole.CLASS_MONITOR else 0.0
         elif title in evidence_counts:
             if title == EVIDENCE_CRITERION_MAP["residence"]:
                 auto_value = 0.0
             else:
                 auto_value = float(evidence_counts.get(title, 0))
-        elif criterion.id in event_counts:
-            auto_value = float(event_counts.get(criterion.id, 0))
+        elif title in AUTO_EVENT_CRITERIA_TITLES:
+            auto_value = float(event_counts.get(criterion.id, 0.0))
 
         if auto_value is None:
             continue
         clamped = round(max(criterion.min_points, min(auto_value, criterion.max_points)), 2)
-        if win == 0:
-            clamped = 0.0
         score.self_score = clamped
         score.class_score = clamped
         score.advisor_score = clamped
+
+
+def refresh_all_submission_automatic_scores(session: Session) -> None:
+    submissions = list(
+        session.scalars(
+            select(ReflexSubmission).options(
+                joinedload(ReflexSubmission.student),
+                joinedload(ReflexSubmission.semester),
+                joinedload(ReflexSubmission.scores).joinedload(ReflexScore.criterion),
+            )
+        ).unique()
+    )
+    for submission in submissions:
+        if not submission.student or not submission.semester:
+            continue
+        if submission.status == "advisor_reviewed":
+            continue
+        apply_automatic_scores(session, submission, submission.student, submission.semester)
+        recompute_totals(submission)
+    session.flush()
 
 
 def recompute_totals(submission: ReflexSubmission) -> None:
     submission.self_total = round(sum(score.self_score for score in submission.scores), 2)
     submission.class_total = round(sum(score.class_score for score in submission.scores), 2)
     submission.advisor_total = round(sum(score.advisor_score for score in submission.scores), 2)
-    submission.updated_at = DEMO_NOW
+    submission.updated_at = current_app_time()
 
 
 def ensure_reflex_submission(
@@ -1377,7 +1919,7 @@ def ensure_reflex_submission(
         submitted_at=submitted_at,
         class_reviewed_at=class_reviewed_at,
         advisor_reviewed_at=advisor_reviewed_at,
-        updated_at=DEMO_NOW,
+        updated_at=current_app_time(),
     )
     session.add(submission)
     session.flush()
@@ -1418,140 +1960,44 @@ def ensure_reflex_submission(
     return submission
 
 
-def ensure_demo_evidences(session: Session, users_by_username: dict[str, User], semesters_by_name: dict[str, Semester]) -> None:
-    if session.scalar(select(ReflexEvidence.id).limit(1)):
-        return
-
-    student_1 = users_by_username[DEFAULT_STUDENT_USERNAME]
-    student_2 = users_by_username["b23dccn002"]
-    class_monitor = users_by_username[DEFAULT_CLASS_MONITOR_USERNAME]
-    active_semester = semesters_by_name["Hoc ky 2 nam hoc 2025-2026"]
-
-    evidences = [
-        (
-            student_1,
-            student_1,
-            "special_achievement",
-            {
-                "award_level": "Giải Nhì cấp Học viện",
-                "activity_content": "Đạt giải trong cuộc thi học thuật ATTT",
-                "participation_time": "2026-03-18",
-                "url": "https://ptit.edu.vn/thanh-tich-attt",
-                "file_name": "giai-nhi-attt.pdf",
-            },
-            "pending_class",
-        ),
-        (
-            student_1,
-            student_1,
-            "positive_promotion",
-            {
-                "activity_content": "Chia sẻ bài viết truyền thông tuyển sinh PTIT 2026",
-                "event_name": "Truyền thông tuyển sinh PTIT 2026",
-                "share_time": "2026-03-25",
-                "url": "https://facebook.com/ptit/post/2026",
-                "file_name": "screenshot-share.png",
-            },
-            "class_approved",
-        ),
-        (
-            student_1,
-            student_1,
-            "residence",
-            {
-                "residence_type": "Ngoại trú",
-                "city": "Hà Nội",
-                "district": "Hà Đông",
-                "ward": "Mộ Lao",
-                "street_address": "Số 12, ngõ 24 Nguyễn Khuyến",
-                "host_name": "Phạm Văn Hùng",
-                "host_phone": "0988123456",
-            },
-            "class_approved",
-        ),
-        (
-            student_2,
-            student_2,
-            "residence",
-            {
-                "residence_type": "Nội trú",
-                "dormitory": "KTX Hà Đông",
-                "room_number": "A-305",
-            },
-            "class_approved",
-        ),
-        (
-            student_2,
-            class_monitor,
-            "social_work",
-            {
-                "social_type": "Hiến máu nhân đạo",
-                "participation_time": "2026-02-15",
-                "url": "https://ptit.edu.vn/hien-mau",
-                "file_name": "giay-xac-nhan-hien-mau.pdf",
-            },
-            "advisor_approved",
-        ),
-    ]
-
-    for student, creator, category_key, payload, status in evidences:
-        session.add(
-            ReflexEvidence(
-                student_id=student.id,
-                created_by_id=creator.id,
-                semester_id=active_semester.id,
-                category_key=category_key,
-                summary=summary_from_payload(category_key, payload),
-                payload_json=json.dumps(payload, ensure_ascii=False),
-                status=status,
-                created_at=DEMO_NOW - timedelta(days=2),
-                submitted_at=DEMO_NOW - timedelta(days=2),
-                class_reviewed_at=DEMO_NOW - timedelta(days=1) if status in {"class_approved", "advisor_approved"} else None,
-                advisor_reviewed_at=DEMO_NOW if status == "advisor_approved" else None,
-            )
-        )
-
-
-def ensure_demo_event_participations(session: Session, student: User, semester: Semester) -> None:
-    active_events = get_active_events(session, semester.id)
-    if not active_events:
-        return
-    for event in active_events:
-        existing = session.scalar(
-            select(EventParticipation).where(
-                EventParticipation.student_id == student.id,
-                EventParticipation.event_id == event.id,
-            )
-        )
-        if existing:
-            continue
-        if event.name == "Chien dich Mua he Xanh 2026":
-            session.add(
-                EventParticipation(
-                    student_id=student.id,
-                    event_id=event.id,
-                    status=ParticipationStatus.PENDING,
-                    submitted_at=DEMO_NOW - timedelta(days=4),
+def ensure_historical_reflex_submissions(session: Session, students: list[User], semesters: list[Semester], criteria: list[Criterion]) -> None:
+    completed_semesters = [semester for semester in semesters if not semester.is_active]
+    target_semesters = completed_semesters[-4:]
+    for student_index, student in enumerate(students):
+        for semester_index, semester in enumerate(target_semesters):
+            existing = session.scalar(
+                select(ReflexSubmission.id).where(
+                    ReflexSubmission.student_id == student.id,
+                    ReflexSubmission.semester_id == semester.id,
                 )
             )
-            continue
-        if event.name == "Truyen thong tuyen sinh PTIT 2026":
-            session.add(
-                EventParticipation(
-                    student_id=student.id,
-                    event_id=event.id,
-                    status=ParticipationStatus.PENDING,
-                    submitted_at=DEMO_NOW - timedelta(days=1),
-                )
+            if existing:
+                continue
+            reviewed_at = datetime.combine(semester.end_date, time(16, 0))
+            preset = dict(HISTORICAL_SCORE_PRESETS[(semester_index + student_index) % len(HISTORICAL_SCORE_PRESETS)])
+            ensure_reflex_submission(
+                session,
+                student,
+                semester,
+                criteria,
+                status="advisor_reviewed",
+                preset=preset,
+                submitted_at=reviewed_at - timedelta(days=2),
+                class_reviewed_at=reviewed_at - timedelta(days=1),
+                advisor_reviewed_at=reviewed_at,
             )
 
 
 def ensure_reflex_demo_data() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_data_dir_exists()
     Base.metadata.create_all(reflex_engine)
     ensure_semester_stage_windows_column()
+    ensure_user_profile_columns()
+    ensure_event_detail_columns()
     with get_reflex_session() as session:
         seed_default_data(session)
+        sync_criteria_blueprint(session)
+        suppressed_seed_usernames = load_suppressed_seed_usernames()
 
         ensure_semester(
             session,
@@ -1570,186 +2016,57 @@ def ensure_reflex_demo_data() -> None:
             is_active=False,
         )
 
-        ensure_user(
-            session,
-            username=DEFAULT_ADMIN_USERNAME,
-            password="admin123",
-            full_name="Quản trị hệ thống",
-            role=UserRole.ADMIN,
-            faculty="PTIT",
-            email="admin@ptit.edu.vn",
-        )
-        ensure_user(
-            session,
-            username=DEFAULT_ADVISOR_USERNAME,
-            password="covan123",
-            full_name=CLASSROOMS["D23CQAT04-B"]["advisor_name"],
-            role=UserRole.ADVISOR,
-            class_name="D23CQAT04-B",
-            faculty="An toàn thông tin",
-            major="An toàn thông tin",
-            email="covan@ptit.edu.vn",
-        )
-        ensure_user(
-            session,
-            username="covan03",
-            password="covan123",
-            full_name=CLASSROOMS["D23CQAT03-B"]["advisor_name"],
-            role=UserRole.ADVISOR,
-            class_name="D23CQAT03-B",
-            faculty="An toàn thông tin",
-            major="An toàn thông tin",
-            email="covan03@ptit.edu.vn",
-        )
-        ensure_user(
-            session,
-            username=DEFAULT_CLASS_MONITOR_USERNAME,
-            password="bcs123",
-            full_name=CLASSROOMS["D23CQAT04-B"]["class_monitor_name"],
-            role=UserRole.CLASS_MONITOR,
-            student_code="B23DCAT401",
-            class_name="D23CQAT04-B",
-            faculty="An toàn thông tin",
-            major="An toàn thông tin",
-            email="bancansu@ptit.edu.vn",
-        )
-        ensure_user(
-            session,
-            username="bancansu03",
-            password="bcs123",
-            full_name=CLASSROOMS["D23CQAT03-B"]["class_monitor_name"],
-            role=UserRole.CLASS_MONITOR,
-            student_code="B23DCAT302",
-            class_name="D23CQAT03-B",
-            faculty="An toàn thông tin",
-            major="An toàn thông tin",
-            email="bancansu03@ptit.edu.vn",
-        )
-
-        for username, profile in STUDENT_PROFILES.items():
-            if username in CLASS_MONITOR_USERNAMES:
+        if DEFAULT_ADMIN_USERNAME not in suppressed_seed_usernames:
+            ensure_user(
+                session,
+                username=DEFAULT_ADMIN_USERNAME,
+                password="admin123",
+                full_name="Quản trị hệ thống",
+                role=UserRole.ADMIN,
+                faculty="PTIT",
+                email="admin@ptit.edu.vn",
+            )
+        for class_name, config in CLASSROOMS.items():
+            username = str(config["advisor_username"])
+            if username in suppressed_seed_usernames:
                 continue
             ensure_user(
                 session,
                 username=username,
-                password="student123",
-                full_name=profile["full_name"],
+                password=username,
+                full_name=str(config["advisor_name"]),
+                role=UserRole.ADVISOR,
+                student_code=username,
+                class_name=class_name,
+                faculty=str(config["faculty"]),
+                major=str(config["major"]),
+                email=f"{username}@ptit.edu.vn",
+            )
+        for username, profile in STUDENT_PROFILES.items():
+            if username in suppressed_seed_usernames:
+                continue
+            ensure_user(
+                session,
+                username=username,
+                password=str(profile["student_code"]),
+                full_name=str(profile["full_name"]),
                 role=UserRole.STUDENT,
-                student_code=profile["student_code"],
-                email=profile["email"],
-                class_name=profile["class_name"],
-                faculty=profile["faculty"],
-                major=profile["major"],
+                student_code=str(profile["student_code"]),
+                email=str(profile["email"]),
+                class_name=str(profile["class_name"]),
+                faculty=str(profile["faculty"]),
+                major=str(profile["major"]),
+                phone=str(profile.get("phone", "")),
+                birth_date=normalize_birth_date_input(str(profile.get("birth_date", ""))),
+                gender=str(profile.get("gender", "")),
+                address=str(profile.get("address", "")),
             )
 
-        students = list(session.scalars(select(User).where(User.role == UserRole.STUDENT).order_by(User.student_code)))
         semesters = list(session.scalars(select(Semester).order_by(Semester.start_date)))
         criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
-        users_by_username = {user.username: user for user in session.scalars(select(User))}
-        semesters_by_name = {semester.name: semester for semester in semesters}
-        active_semester = semesters_by_name.get("Hoc ky 2 nam hoc 2025-2026")
-        if active_semester:
-            demo_events = [
-                (
-                    "Ngay hoi viec lam Cyber Security 2026",
-                    "Tham gia cac buoi hoi thao viec lam, dinh huong nghe nghiep do Hoc vien to chuc",
-                    1.0,
-                    "QR-JOBFAIR2026",
-                ),
-                (
-                    "Truyen thong tuyen sinh PTIT 2026",
-                    "Tuyen truyen tich cuc hinh anh ve Truong/Khoa tren mang xa hoi",
-                    1.0,
-                    "QR-TS2026",
-                ),
-                (
-                    "Chien dich Mua he Xanh 2026",
-                    "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de",
-                    1.0,
-                    "QR-MHX2026",
-                ),
-            ]
-            for event_name, criterion_title, points, qr_code in demo_events:
-                crit = session.scalar(select(Criterion).where(Criterion.title == criterion_title))
-                if not crit:
-                    continue
-                with session.no_autoflush:
-                    existing_event = session.scalar(select(Event).where((Event.name == event_name) | (Event.qr_code == qr_code)))
-                if existing_event:
-                    existing_event.semester_id = active_semester.id
-                    existing_event.criterion_id = crit.id
-                    existing_event.name = event_name
-                    existing_event.points = points
-                    existing_event.qr_code = qr_code
-                    existing_event.is_active = True
-                else:
-                    session.add(
-                        Event(
-                            semester_id=active_semester.id,
-                            criterion_id=crit.id,
-                            name=event_name,
-                            points=points,
-                            qr_code=qr_code,
-                            is_active=True,
-                        )
-                    )
-
-        for student in students:
-            for semester in semesters:
-                if student.username == DEFAULT_STUDENT_USERNAME and semester.name == "Hoc ky 2 nam hoc 2025-2026":
-                    ensure_reflex_submission(session, student, semester, criteria, status="draft", preset=DEFAULT_ACTIVE_SCORES)
-                    continue
-
-                if student.username == DEFAULT_STUDENT_USERNAME and semester.name == "Hoc ky 1 nam hoc 2025-2026":
-                    ensure_reflex_submission(
-                        session,
-                        student,
-                        semester,
-                        criteria,
-                        status="student_submitted",
-                        copy_legacy=True,
-                        submitted_at=datetime(2026, 4, 9, 20, 0),
-                    )
-                    continue
-
-                if student.username == "b23dccn002" and semester.name == "Hoc ky 1 nam hoc 2025-2026":
-                    ensure_reflex_submission(
-                        session,
-                        student,
-                        semester,
-                        criteria,
-                        status="draft",
-                        copy_legacy=True,
-                    )
-                    continue
-
-                ensure_reflex_submission(
-                    session,
-                    student,
-                    semester,
-                    criteria,
-                    status="draft",
-                    copy_legacy=True,
-                )
-
-        class_monitors = list(session.scalars(select(User).where(User.role == UserRole.CLASS_MONITOR)))
-        for class_monitor_user in class_monitors:
-            for semester in semesters:
-                ensure_reflex_submission(session, class_monitor_user, semester, criteria, status="draft", copy_legacy=False)
-
-        ensure_demo_evidences(session, users_by_username, semesters_by_name)
-        for evidence in session.scalars(select(ReflexEvidence).where(ReflexEvidence.status == "advisor_approved")):
-            evidence.status = "class_approved"
-            evidence.advisor_reviewed_at = None
-        ensure_demo_event_participations(session, users_by_username[DEFAULT_STUDENT_USERNAME], semesters_by_name["Hoc ky 2 nam hoc 2025-2026"])
-        for username in CLASS_MONITOR_USERNAMES:
-            class_monitor_user = users_by_username.get(username)
-            if class_monitor_user:
-                ensure_demo_event_participations(
-                    session,
-                    class_monitor_user,
-                    semesters_by_name["Hoc ky 2 nam hoc 2025-2026"],
-                )
+        sync_reflex_scores_with_criteria(session, criteria)
+        students = list(session.scalars(select(User).where(User.role.in_(STUDENT_LIKE_ROLES)).order_by(User.student_code)))
+        ensure_historical_reflex_submissions(session, students, semesters, criteria)
 
 
 def account_scope_students(session: Session, current_user: User) -> list[User]:
@@ -1760,35 +2077,50 @@ def account_scope_students(session: Session, current_user: User) -> list[User]:
         students = list(
             session.scalars(
                 select(User)
-                .where(User.role == UserRole.STUDENT, User.class_name.in_(managed_classes))
+                .where(User.role.in_(STUDENT_LIKE_ROLES), User.class_name.in_(managed_classes))
                 .order_by(User.student_code)
             )
         )
+        if current_user.role == UserRole.CLASS_MONITOR and current_user.id not in {s.id for s in students}:
+            return [current_user, *students]
         return students
-    return list(session.scalars(select(User).where(User.role == UserRole.STUDENT).order_by(User.student_code)))
+    return list(session.scalars(select(User).where(User.role.in_(STUDENT_LIKE_ROLES)).order_by(User.student_code)))
 
 
 def preferred_student(session: Session, current_user: User, students: list[User], target_student_id: int | None) -> User:
     if current_user.role == UserRole.STUDENT:
         return current_user
-    if current_user.role == UserRole.CLASS_MONITOR and target_student_id == current_user.id:
+    if not students:
         return current_user
     if target_student_id:
         found = next((student for student in students if student.id == target_student_id), None)
         if found:
             return found
     if current_user.role == UserRole.CLASS_MONITOR:
-        managed_student_ids = [student.id for student in students]
-        if managed_student_ids:
-            pending = session.scalar(
-                select(ReflexSubmission)
-                .where(ReflexSubmission.status == "student_submitted", ReflexSubmission.student_id.in_(managed_student_ids))
-                .order_by(ReflexSubmission.updated_at.desc())
+        self_student = next((student for student in students if student.id == current_user.id), None)
+        if self_student:
+            own_draft = session.scalar(
+                select(ReflexSubmission).where(ReflexSubmission.student_id == current_user.id, ReflexSubmission.status == "draft")
             )
-            if pending:
-                return next(student for student in students if student.id == pending.student_id)
-            return students[0]
-        return current_user
+            if own_draft:
+                return self_student
+            own_submitted = session.scalar(
+                select(ReflexSubmission).where(
+                    ReflexSubmission.student_id == current_user.id, ReflexSubmission.status == "student_submitted"
+                )
+            )
+            if own_submitted:
+                return self_student
+        managed_student_ids = [student.id for student in students if student.id != current_user.id]
+        pending = session.scalar(
+            select(ReflexSubmission)
+            .where(ReflexSubmission.status == "student_submitted", ReflexSubmission.student_id.in_(managed_student_ids))
+            .order_by(ReflexSubmission.updated_at.desc())
+        )
+        if pending:
+            return next(student for student in students if student.id == pending.student_id)
+        if self_student:
+            return self_student
     if current_user.role == UserRole.ADVISOR:
         pending = session.scalar(
             select(ReflexSubmission)
@@ -1797,8 +2129,6 @@ def preferred_student(session: Session, current_user: User, students: list[User]
         )
         if pending:
             return next(student for student in students if student.id == pending.student_id)
-    if not students:
-        return current_user
     return students[0]
 
 
@@ -1808,43 +2138,11 @@ def preferred_semester(
     target_student: User,
     semesters: list[Semester],
     selected_semester_id: int | None,
-    active_tab: str | None = None,
 ) -> Semester:
     if selected_semester_id:
         found = next((semester for semester in semesters if semester.id == selected_semester_id), None)
         if found:
             return found
-    if current_user.role == UserRole.CLASS_MONITOR and current_user.id != target_student.id and active_tab == "students_score":
-        pending = session.scalar(
-            select(ReflexSubmission)
-            .where(ReflexSubmission.student_id == target_student.id, ReflexSubmission.status == "student_submitted")
-            .order_by(ReflexSubmission.updated_at.desc())
-        )
-        if pending:
-            return next(semester for semester in semesters if semester.id == pending.semester_id)
-    if current_user.role == UserRole.CLASS_MONITOR and current_user.id != target_student.id:
-        pending_evidence_semester = session.scalar(
-            select(Semester)
-            .join(ReflexEvidence, ReflexEvidence.semester_id == Semester.id)
-            .where(
-                ReflexEvidence.student_id == target_student.id,
-                ReflexEvidence.status == "pending_class",
-            )
-            .order_by(Semester.is_active.desc(), Semester.start_date.desc(), ReflexEvidence.created_at.desc())
-        )
-        if pending_evidence_semester:
-            return pending_evidence_semester
-        any_evidence_semester = session.scalar(
-            select(Semester)
-            .join(ReflexEvidence, ReflexEvidence.semester_id == Semester.id)
-            .where(ReflexEvidence.student_id == target_student.id)
-            .order_by(Semester.is_active.desc(), Semester.start_date.desc(), ReflexEvidence.created_at.desc())
-        )
-        if any_evidence_semester:
-            return any_evidence_semester
-        active_semester = next((semester for semester in semesters if semester.is_active), None)
-        if active_semester:
-            return active_semester
     if current_user.id == target_student.id and current_user.role in {UserRole.STUDENT, UserRole.CLASS_MONITOR}:
         for semester in semesters:
             if semester_evaluation_calendar_open(semester):
@@ -1885,7 +2183,7 @@ def score_permissions(current_user: User, target_student: User, submission: Refl
         "advisor_editable": current_user.role == UserRole.ADVISOR and can_manage and submission.status == "class_reviewed",
     }
     if current_user.role == UserRole.ADMIN:
-        return {"self_editable": False, "class_editable": False, "advisor_editable": False}
+        return {"self_editable": True, "class_editable": True, "advisor_editable": True}
     if not semester_evaluation_calendar_open(semester):
         if current_user.id == target_student.id and current_user.role in {UserRole.STUDENT, UserRole.CLASS_MONITOR}:
             return {"self_editable": False, "class_editable": False, "advisor_editable": False}
@@ -1919,9 +2217,9 @@ def evidence_permissions(current_user: User, target_student: User, evidence: Ref
         if current_user.role != UserRole.CLASS_MONITOR or not can_manage:
             return {"can_delete": False, "can_class_review": False, "can_advisor_review": False}
     win = current_window_index(semester)
-    if win not in {0, 1} and perms["can_delete"]:
+    if win != 0 and perms["can_delete"]:
         perms["can_delete"] = False
-    if win not in {0, 1, 2} and perms["can_class_review"]:
+    if win != 0 and perms["can_class_review"]:
         perms["can_class_review"] = False
     return perms
 
@@ -1953,22 +2251,8 @@ def serialize_evidence_detail(evidence: ReflexEvidence, current_user: User, targ
     fields = []
     for key, label in field_defs:
         val = str(payload.get(key, "") or "")
-        href = ""
-        upload_path = ""
-        if key == "url" and val.startswith(("http://", "https://")):
-            href = val
-        elif key == "file_name":
-            upload_path = public_upload_name(payload.get("file_path"))
-            href = public_upload_href(payload.get("file_path"))
-        fields.append(
-            {
-                "label": label,
-                "value": val,
-                "is_link": bool(href or upload_path),
-                "href": href,
-                "upload_path": upload_path,
-            }
-        )
+        is_link = key == "url" and val.startswith(("http://", "https://"))
+        fields.append({"label": label, "value": val, "is_link": is_link})
     return {
         "id": evidence.id,
         "title": CATEGORY_LABELS.get(evidence.category_key, "Chi tiết minh chứng"),
@@ -1980,90 +2264,22 @@ def serialize_evidence_detail(evidence: ReflexEvidence, current_user: User, targ
     }
 
 
-def serialize_reflex_submission_api(submission: ReflexSubmission) -> dict:
-    return {
-        "id": submission.id,
-        "student": vi(submission.student.full_name) if submission.student else "",
-        "student_code": submission.student.student_code if submission.student else "",
-        "semester": vi(submission.semester.name) if submission.semester else "",
-        "status": submission.status,
-        "self_total": submission.self_total,
-        "class_total": submission.class_total,
-        "advisor_total": submission.advisor_total,
-        "student_note": submission.student_note,
-        "class_note": submission.class_note,
-        "advisor_note": submission.advisor_note,
-        "scores": [
-            {
-                "criterion": vi(score.criterion.title) if score.criterion else "",
-                "group": vi(score.criterion.group.title) if score.criterion and score.criterion.group else "",
-                "self_score": score.self_score,
-                "class_score": score.class_score,
-                "advisor_score": score.advisor_score,
-                "student_comment": score.student_comment,
-                "class_feedback": score.class_feedback,
-                "advisor_feedback": score.advisor_feedback,
-            }
-            for score in submission.scores
-        ],
-    }
-
-
-def api_semesters_payload() -> list[dict]:
-    ensure_reflex_demo_data()
-    with get_reflex_session() as session:
-        semesters = get_semesters(session)
-        return [
-            {
-                "id": semester.id,
-                "name": vi(semester.name),
-                "academic_year": semester.academic_year,
-                "is_active": semester.is_active,
-            }
-            for semester in semesters
-        ]
-
-
-def api_dashboard_payload() -> dict:
-    ensure_reflex_demo_data()
-    with get_reflex_session() as session:
-        active = session.scalar(select(Semester).where(Semester.is_active.is_(True)).order_by(Semester.start_date.desc()))
-        pending_count = session.scalar(
-            select(text("count(*)")).select_from(ReflexSubmission).where(
-                ReflexSubmission.status.in_(["student_submitted", "class_reviewed"])
-            )
-        )
-        return {
-            "active_semester": vi(active.name) if active else None,
-            "review_queue": int(pending_count or 0),
-        }
-
-
-def api_submission_payload(submission_id: int) -> dict | None:
-    ensure_reflex_demo_data()
-    with get_reflex_session() as session:
-        submission = session.scalar(
-            select(ReflexSubmission)
-            .where(ReflexSubmission.id == submission_id)
-            .options(
-                joinedload(ReflexSubmission.student),
-                joinedload(ReflexSubmission.semester),
-                joinedload(ReflexSubmission.scores).joinedload(ReflexScore.criterion).joinedload(Criterion.group),
-            )
-        )
-        if not submission:
-            return None
-        return serialize_reflex_submission_api(submission)
-
-
 def event_detail_for_registered(event: Event) -> dict[str, str]:
     detail = REGISTERED_EVENT_DETAILS.get(event.name, {})
+    criterion_title = event.criterion.title if event.criterion else ""
+    type_label = detail.get("type_label", "Sự kiện")
+    if not detail and criterion_title == CLASS_MEETING_EVENT_CRITERION_TITLE:
+        type_label = "Họp lớp"
+    elif not detail and criterion_title == CAREER_WORKSHOP_EVENT_CRITERION_TITLE:
+        type_label = "Hội thảo việc làm"
+    elif not detail and criterion_title == STUDY_ACTIVITY_EVENT_CRITERION_TITLE:
+        type_label = "Học thuật"
     return {
-        "type_label": detail.get("type_label", "Sự kiện"),
+        "type_label": type_label,
         "event_name": event.name,
-        "start_time": detail.get("start_time", ""),
-        "end_time": detail.get("end_time", ""),
-        "location": detail.get("location", "PTIT"),
+        "start_time": event.start_time or detail.get("start_time", ""),
+        "end_time": event.end_time or detail.get("end_time", ""),
+        "location": event.location or detail.get("location", "PTIT"),
         "counts_to_score": detail.get("counts_to_score", "Có"),
         "note": detail.get("note", ""),
     }
@@ -2072,12 +2288,7 @@ def event_detail_for_registered(event: Event) -> dict[str, str]:
 def _parse_event_time(value: str) -> datetime | None:
     if not value:
         return None
-    for pattern in ("%H:%M %d/%m/%Y", "%H:%M %d/%m/%Y "):
-        try:
-            return datetime.strptime(value.strip(), pattern)
-        except ValueError:
-            continue
-    return None
+    return parse_event_datetime(value)
 
 
 def _weekday_label(moment: datetime) -> str:
@@ -2091,10 +2302,10 @@ def serialize_event_item(event: Event, participation: EventParticipation | None 
     return {
         "id": str(event.id),
         "participation_id": participation.id if participation else 0,
-        "title": event.name,
+        "title": vi(event.name),
         "points": format_points(event.points),
         "type_label": detail["type_label"],
-        "event_name": detail["event_name"],
+        "event_name": vi(detail["event_name"]),
         "start_time": detail["start_time"],
         "end_time": detail["end_time"],
         "location": detail["location"],
@@ -2104,7 +2315,7 @@ def serialize_event_item(event: Event, participation: EventParticipation | None 
         "count": "1",
         "time": start_moment.strftime("%H:%M") if start_moment else "",
         "accent": "#53b8dc" if detail["type_label"] != "Họp lớp" else "#b774ff",
-        "status_label": participation.status.value if participation else "",
+        "status_label": PARTICIPATION_STATUS_LABELS.get(participation.status, "") if participation else "",
     }
 
 
@@ -2133,9 +2344,14 @@ def build_event_lists(
     )
     can_register = registration_context
     can_approve = (
-        current_user.role in {UserRole.CLASS_MONITOR, UserRole.ADMIN}
+        (
+            current_user.role == UserRole.ADMIN
+            or (
+                current_user.role == UserRole.CLASS_MONITOR
+                and current_window_index(selected_semester) == 0
+            )
+        )
         and can_manage_student(current_user, target_student)
-        and current_user.id != target_student.id
     )
 
     for event in active_events:
@@ -2143,6 +2359,14 @@ def build_event_lists(
         item = serialize_event_item(event, participation)
         if participation and participation.status == ParticipationStatus.APPROVED:
             joined_events.append(item)
+            registered_events.append(
+                {
+                    **item,
+                    "action_label": "Đã duyệt",
+                    "can_register": False,
+                    "can_approve": False,
+                }
+            )
             continue
         if participation:
             registered_events.append(
@@ -2165,9 +2389,10 @@ def build_event_lists(
             }
         )
 
-    joined_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or DEMO_NOW, reverse=False)
-    registered_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or DEMO_NOW, reverse=False)
-    open_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or DEMO_NOW, reverse=False)
+    now = current_app_time()
+    joined_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or now, reverse=False)
+    registered_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or now, reverse=False)
+    open_events.sort(key=lambda item: _parse_event_time(str(item.get("start_time", ""))) or now, reverse=False)
     return joined_events, registered_events, open_events
 
 
@@ -2176,7 +2401,6 @@ def build_snapshot(
     selected_semester_id: int | None = None,
     target_student_id: int | None = None,
     selected_category_key: str | None = None,
-    active_tab: str | None = None,
 ) -> dict:
     ensure_reflex_demo_data()
     with get_reflex_session() as session:
@@ -2189,58 +2413,46 @@ def build_snapshot(
         )
         current_user = next((user for user in accounts if user.id == current_user_id), None)
         if current_user is None:
-            current_user = next(user for user in accounts if user.username == DEFAULT_STUDENT_USERNAME)
+            current_user = next((user for user in accounts if user.username == DEFAULT_ADMIN_USERNAME), accounts[0])
 
         students = account_scope_students(session, current_user)
         target_student = preferred_student(session, current_user, students, target_student_id)
         semesters = get_semesters(session)
-        selected_semester = preferred_semester(
-            session,
-            current_user,
-            target_student,
-            semesters,
-            selected_semester_id,
-            active_tab,
-        )
+        selected_semester = preferred_semester(session, current_user, target_student, semesters, selected_semester_id)
+        auto_submit_overdue_student_submissions(session, selected_semester)
 
         category_key = selected_category_key or EVIDENCE_CATEGORIES[0]["key"]
         if category_key not in CATEGORY_LABELS:
             category_key = EVIDENCE_CATEGORIES[0]["key"]
 
-        evidence_category_keys = list(
-            session.scalars(
-                select(ReflexEvidence.category_key)
-                .where(
-                    ReflexEvidence.student_id == target_student.id,
-                    ReflexEvidence.semester_id == selected_semester.id,
-                )
-                .order_by(ReflexEvidence.created_at.desc())
+        criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
+        target_is_student = target_student.role in STUDENT_LIKE_ROLES
+        if target_is_student:
+            submission = ensure_reflex_submission(
+                session,
+                target_student,
+                selected_semester,
+                criteria,
+                status="draft",
+                copy_legacy=True,
             )
-        )
-        evidence_counts_by_category = {item["key"]: 0 for item in EVIDENCE_CATEGORIES}
-        for evidence_category_key in evidence_category_keys:
-            if evidence_category_key in evidence_counts_by_category:
-                evidence_counts_by_category[evidence_category_key] += 1
-        if evidence_counts_by_category.get(category_key, 0) == 0:
-            fallback_category = next(
-                (item["key"] for item in EVIDENCE_CATEGORIES if evidence_counts_by_category.get(item["key"], 0) > 0),
-                None,
-            )
-            if fallback_category:
-                category_key = fallback_category
-
-        submission = session.scalar(
-            select(ReflexSubmission)
-            .where(ReflexSubmission.student_id == target_student.id, ReflexSubmission.semester_id == selected_semester.id)
-            .options(joinedload(ReflexSubmission.scores).joinedload(ReflexScore.criterion))
-        )
-        apply_automatic_scores(session, submission, target_student, selected_semester)
-        recompute_totals(submission)
-        permissions = score_permissions(current_user, target_student, submission, selected_semester)
-        note_perms = note_permissions(current_user, target_student, submission, selected_semester)
+            if submission.status != "advisor_reviewed":
+                apply_automatic_scores(session, submission, target_student, selected_semester)
+            recompute_totals(submission)
+            permissions = score_permissions(current_user, target_student, submission, selected_semester)
+            note_perms = note_permissions(current_user, target_student, submission, selected_semester)
+            score_map = {score.criterion_id: score for score in submission.scores}
+        else:
+            submission = None
+            permissions = {"self_editable": False, "class_editable": False, "advisor_editable": False}
+            note_perms = {
+                "student_note_editable": False,
+                "class_note_editable": False,
+                "advisor_note_editable": False,
+            }
+            score_map = {}
         locked_titles = auto_locked_titles(session, selected_semester.id)
         groups = get_criteria_tree(session)
-        score_map = {score.criterion_id: score for score in submission.scores}
         score_rows: list[dict] = []
         for group in groups:
             score_rows.append(
@@ -2250,6 +2462,8 @@ def build_snapshot(
                     "criterion_id": 0,
                     "title": vi(group.title),
                     "max_points": format_points(group.max_points),
+                    "min_points": 0.0,
+                    "max_points_value": float(group.max_points),
                     "range": "",
                     "self_score": "",
                     "class_score": "",
@@ -2262,7 +2476,8 @@ def build_snapshot(
             for criterion in group.criteria:
                 score = score_map.get(criterion.id)
                 hide_zero = (
-                    semester_evaluation_calendar_open(selected_semester)
+                    submission is not None
+                    and semester_evaluation_calendar_open(selected_semester)
                     and submission.status == "draft"
                     and criterion.title not in VISIBLE_ZEROS
                 )
@@ -2273,6 +2488,8 @@ def build_snapshot(
                         "id": f"criterion-{criterion.id}",
                         "criterion_id": criterion.id,
                         "title": vi(criterion.title),
+                        "min_points": float(criterion.min_points),
+                        "max_points_value": float(criterion.max_points),
                         "range": f"[{criterion.min_points:g} - {criterion.max_points:g}]",
                         "self_score": format_points(score.self_score if score else 0.0, hide_zero=hide_zero),
                         "class_score": format_points(score.class_score if score else 0.0, hide_zero=hide_zero),
@@ -2284,18 +2501,20 @@ def build_snapshot(
                     }
                 )
 
-        evidences = list(
-            session.scalars(
-                select(ReflexEvidence)
-                .where(
-                    ReflexEvidence.student_id == target_student.id,
-                    ReflexEvidence.semester_id == selected_semester.id,
-                    ReflexEvidence.category_key == category_key,
+        evidences = []
+        if target_is_student:
+            evidences = list(
+                session.scalars(
+                    select(ReflexEvidence)
+                    .where(
+                        ReflexEvidence.student_id == target_student.id,
+                        ReflexEvidence.semester_id == selected_semester.id,
+                        ReflexEvidence.category_key == category_key,
+                    )
+                    .options(joinedload(ReflexEvidence.creator))
+                    .order_by(ReflexEvidence.created_at.desc())
                 )
-                .options(joinedload(ReflexEvidence.creator))
-                .order_by(ReflexEvidence.created_at.desc())
             )
-        )
         evidence_rows = []
         for index, evidence in enumerate(evidences, start=1):
             perms = evidence_permissions(current_user, target_student, evidence, selected_semester)
@@ -2315,20 +2534,62 @@ def build_snapshot(
                 }
             )
 
-        joined_events, registered_events, open_events = build_event_lists(session, current_user, target_student, selected_semester)
+        if target_is_student:
+            joined_events, registered_events, open_events = build_event_lists(session, current_user, target_student, selected_semester)
+        else:
+            joined_events, registered_events, open_events = [], [], []
 
+        student_ids = [student.id for student in students]
         student_submission_map = {
             item.student_id: item
             for item in session.scalars(
                 select(ReflexSubmission).where(
-                    ReflexSubmission.student_id.in_([student.id for student in students]),
+                    ReflexSubmission.student_id.in_(student_ids),
                     ReflexSubmission.semester_id == selected_semester.id,
                 )
             )
         }
-        student_items = [serialize_student(user, student_submission_map.get(user.id)) for user in students]
+        pending_evidence_counts: dict[int, int] = {}
+        for evidence in session.scalars(
+            select(ReflexEvidence).where(
+                ReflexEvidence.student_id.in_(student_ids),
+                ReflexEvidence.semester_id == selected_semester.id,
+                ReflexEvidence.status == "pending_class",
+            )
+        ):
+            pending_evidence_counts[evidence.student_id] = pending_evidence_counts.get(evidence.student_id, 0) + 1
+        pending_event_counts: dict[int, int] = {}
+        for participation in session.scalars(
+            select(EventParticipation)
+            .join(Event, Event.id == EventParticipation.event_id)
+            .where(
+                EventParticipation.student_id.in_(student_ids),
+                Event.semester_id == selected_semester.id,
+                EventParticipation.status == ParticipationStatus.PENDING,
+            )
+        ):
+            pending_event_counts[participation.student_id] = pending_event_counts.get(participation.student_id, 0) + 1
+
+        student_items = [
+            serialize_student(
+                user,
+                student_submission_map.get(user.id),
+                pending_evidence_counts.get(user.id, 0),
+                pending_event_counts.get(user.id, 0),
+                format_points(semester_metrics_for_user(session, user, selected_semester).get("gpa", 0.0)),
+            )
+            for user in students
+        ]
         role_management_rows = build_role_management_rows(session, current_user)
+        role_management_classes = build_role_management_classes(role_management_rows)
         profile_card = student_profile_snapshot(session, target_student, selected_semester.name)
+        submission_status = submission.status if submission else ""
+        submission_status_label = SUBMISSION_LABELS.get(submission_status, submission_status) if submission else ""
+        score_total = format_points(submission.self_total if submission else 0.0)
+        score_effective_total = format_points(effective_conduct_total(submission))
+        score_total_class = format_points(submission.class_total if submission else 0.0)
+        score_total_advisor = format_points(submission.advisor_total if submission else 0.0)
+        conduct_label = conduct_grade_label(effective_conduct_total(submission)) if submission else "—"
         return {
             "selected_account_id": current_user.id,
             "current_user_name": vi(current_user.full_name),
@@ -2340,11 +2601,12 @@ def build_snapshot(
             "current_user_class_name": current_user.class_name or "",
             "current_user_student_code": current_user.student_code or "",
             "role_management_rows": role_management_rows,
+            "role_management_classes": role_management_classes,
             "students": student_items,
             "selected_student_id": target_student.id,
             "selected_student_label": next(
                 (item["label"] for item in student_items if item["id"] == target_student.id),
-                f"{vi(target_student.full_name)} - {target_student.student_code or ''}".rstrip(" -"),
+                f"{vi(target_student.full_name)} - {target_student.student_code or ''}".strip(),
             ),
             "selected_student_name": vi(target_student.full_name),
             "selected_student_code": target_student.student_code or "",
@@ -2352,23 +2614,24 @@ def build_snapshot(
             "semesters": [{"id": semester.id, "name": vi(semester.name)} for semester in semesters],
             "selected_semester_id": selected_semester.id,
             "selected_semester_name": vi(selected_semester.name),
-            "timeline": timeline_from_submission(selected_semester, submission.status),
-            "outside_window": is_outside_score_window(current_user, target_student, selected_semester),
-            "submission_status": submission.status,
-            "submission_status_label": SUBMISSION_LABELS.get(submission.status, submission.status),
+            "timeline": timeline_from_submission(selected_semester, submission_status or "draft"),
+            "outside_window": is_outside_score_window(current_user, target_student, selected_semester) if target_is_student else False,
+            "submission_status": submission_status,
+            "submission_status_label": submission_status_label,
             "score_rows": score_rows,
-            "score_total": format_points(submission.self_total),
-            "score_effective_total": format_points(effective_conduct_total(submission)),
-            "score_total_class": format_points(submission.class_total),
-            "score_total_advisor": format_points(submission.advisor_total),
-            "conduct_grade_label": conduct_grade_label(effective_conduct_total(submission)),
-            "student_note": submission.student_note,
-            "class_note": submission.class_note,
-            "advisor_note": submission.advisor_note,
+            "score_total": score_total,
+            "score_effective_total": score_effective_total,
+            "score_total_class": score_total_class,
+            "score_total_advisor": score_total_advisor,
+            "conduct_grade_label": conduct_label,
+            "student_note": submission.student_note if submission else "",
+            "class_note": submission.class_note if submission else "",
+            "advisor_note": submission.advisor_note if submission else "",
             "can_edit_student_note": note_perms["student_note_editable"],
             "can_edit_class_note": note_perms["class_note_editable"],
             "can_edit_advisor_note": note_perms["advisor_note_editable"],
             "can_save_student": permissions["self_editable"],
+            "can_save_class": permissions["class_editable"],
             "can_submit_student": permissions["self_editable"],
             "can_review_class": permissions["class_editable"],
             "can_review_advisor": permissions["advisor_editable"],
@@ -2378,26 +2641,27 @@ def build_snapshot(
             "evidence_rows": evidence_rows,
             "has_evidence_rows": bool(evidence_rows),
             "evidence_count": str(len(evidence_rows)),
-            "can_create_evidence": semester_evaluation_calendar_open(selected_semester)
+            "can_create_evidence": target_is_student
+            and semester_evaluation_calendar_open(selected_semester)
             and (
                 current_user.role == UserRole.ADMIN
                 or (
                     current_user.role in {UserRole.STUDENT, UserRole.CLASS_MONITOR}
                     and current_user.id == target_student.id
-                    and evidence_entry_window_open(selected_semester)
+                    and current_window_index(selected_semester) == 0
                 )
             ),
-            "can_download_conduct_pdf": current_user.role == UserRole.ADMIN
-            or current_user.id == target_student.id
-            or can_manage_student(current_user, target_student),
+            "can_download_conduct_pdf": target_is_student
+            and (
+                current_user.role == UserRole.ADMIN
+                or current_user.id == target_student.id
+                or can_manage_student(current_user, target_student)
+            ),
             "selected_semester_is_active": selected_semester.is_active,
-            "criterion_choice_labels": [
-                f"{criterion.id}|{vi(criterion.title)}"
-                for criterion in session.scalars(
-                    select(Criterion).order_by(Criterion.group_id, Criterion.display_order, Criterion.id)
-                )
-            ],
+            "criterion_choice_labels": [vi(criterion.title) for criterion in auto_event_criteria(session)],
+            "criterion_choice_ids": [int(criterion.id) for criterion in auto_event_criteria(session)],
             "student_profile": profile_card,
+            "selected_student_gpa": profile_card.get("gpa", "0"),
             "joined_events": joined_events,
             "registered_events": registered_events,
             "has_registered_events": bool(registered_events),
@@ -2440,6 +2704,65 @@ def update_user_role(current_user_id: int, target_user_id: int, new_role: str) -
         target_user.role = target_role
 
 
+def delete_user_account(current_user_id: int, target_user_id: int) -> None:
+    ensure_reflex_demo_data()
+    suppressed_seed_usernames = load_suppressed_seed_usernames()
+    deleted_seed_username: str | None = None
+    with get_reflex_session() as session:
+        current_user = session.get(User, current_user_id)
+        target_user = session.get(User, target_user_id)
+        if not current_user:
+            raise ValueError("Không tìm thấy tài khoản đang đăng nhập.")
+        if not target_user:
+            raise ValueError("Không tìm thấy tài khoản cần xóa.")
+        if current_user.id == target_user.id:
+            raise ValueError("Không thể xóa chính tài khoản đang đăng nhập.")
+        if current_user.role == UserRole.ADMIN:
+            pass
+        elif current_user.role == UserRole.ADVISOR:
+            if target_user.role not in {UserRole.STUDENT, UserRole.CLASS_MONITOR}:
+                raise ValueError("Cố vấn chỉ được xóa tài khoản sinh viên hoặc ban cán sự trong lớp phụ trách.")
+            if (target_user.class_name or "") not in managed_classes_for_user(current_user):
+                raise ValueError("Tài khoản này không thuộc lớp do bạn phụ trách.")
+        else:
+            raise ValueError("Bạn không có quyền xóa tài khoản.")
+
+        if target_user.username in SEEDED_USERNAMES:
+            deleted_seed_username = target_user.username
+
+        for submission in list(
+            session.scalars(select(ReflexSubmission).where(ReflexSubmission.student_id == target_user.id))
+        ):
+            session.delete(submission)
+        for submission in list(
+            session.scalars(select(LegacySubmission).where(LegacySubmission.student_id == target_user.id))
+        ):
+            session.delete(submission)
+        for participation in list(
+            session.scalars(select(EventParticipation).where(EventParticipation.student_id == target_user.id))
+        ):
+            session.delete(participation)
+        for evidence in list(
+            session.scalars(select(ReflexEvidence).where(ReflexEvidence.student_id == target_user.id))
+        ):
+            session.delete(evidence)
+
+        for evidence in list(
+            session.scalars(
+                select(ReflexEvidence).where(
+                    ReflexEvidence.created_by_id == target_user.id,
+                    ReflexEvidence.student_id != target_user.id,
+                )
+            )
+        ):
+            evidence.created_by_id = evidence.student_id
+
+        session.delete(target_user)
+    if deleted_seed_username:
+        suppressed_seed_usernames.add(deleted_seed_username)
+        save_suppressed_seed_usernames(suppressed_seed_usernames)
+
+
 def load_evidence_detail(evidence_id: int, current_user_id: int, target_student_id: int) -> dict:
     ensure_reflex_demo_data()
     with get_reflex_session() as session:
@@ -2480,8 +2803,9 @@ def create_evidence(
             raise ValueError("Chỉ được khai báo minh chứng cho chính mình.")
         if current_user.role != UserRole.ADMIN and not semester_evaluation_calendar_open(semester):
             raise ValueError("Học kỳ không trong thời gian đánh giá; không thể thêm minh chứng.")
-        if current_user.role != UserRole.ADMIN and not evidence_entry_window_open(semester):
-            raise ValueError("Chỉ được khai báo minh chứng trước khi ban cán sự bắt đầu duyệt phiếu điểm.")
+        if current_user.role != UserRole.ADMIN and current_window_index(semester) != 0:
+            raise ValueError("Chỉ được khai báo minh chứng trong giai đoạn minh chứng.")
+        now = current_app_time()
 
         session.add(
             ReflexEvidence(
@@ -2492,8 +2816,8 @@ def create_evidence(
                 summary=summary_from_payload(category_key, payload),
                 payload_json=json.dumps(payload, ensure_ascii=False),
                 status="pending_class",
-                created_at=DEMO_NOW,
-                submitted_at=DEMO_NOW,
+                created_at=now,
+                submitted_at=now,
             )
         )
 
@@ -2518,9 +2842,9 @@ def delete_evidence(current_user_id: int, evidence_id: int) -> None:
         if (
             semester
             and current_user.role != UserRole.ADMIN
-            and not evidence_entry_window_open(semester)
+            and current_window_index(semester) != 0
         ):
-            raise ValueError("Chỉ được xóa minh chứng trước khi ban cán sự bắt đầu duyệt phiếu điểm.")
+            raise ValueError("Chỉ được xóa minh chứng trong giai đoạn minh chứng.")
         session.delete(evidence)
 
 
@@ -2541,16 +2865,17 @@ def review_evidence(current_user_id: int, evidence_id: int, action: str) -> None
         if (
             semester
             and current_user.role == UserRole.CLASS_MONITOR
-            and current_window_index(semester) not in {0, 1, 2}
+            and current_window_index(semester) != 0
         ):
             raise ValueError("Chưa trong thời gian được duyệt minh chứng.")
+        now = current_app_time()
 
         if action == "class_approve":
             allowed = current_user.role == UserRole.CLASS_MONITOR and evidence.status == "pending_class"
             if not allowed:
                 raise ValueError("Không thể duyệt minh chứng ở bước ban cán sự.")
             evidence.status = "class_approved"
-            evidence.class_reviewed_at = DEMO_NOW
+            evidence.class_reviewed_at = now
         elif action == "advisor_approve":
             raise ValueError("Minh chứng chỉ cần ban cán sự duyệt.")
         elif action == "reject":
@@ -2576,8 +2901,6 @@ def save_submission_scores(
         semester = session.get(Semester, semester_id)
         if not current_user or not target_student or not semester:
             raise ValueError("Không tìm thấy dữ liệu phiếu điểm.")
-        if current_user.role == UserRole.ADMIN:
-            raise ValueError("Admin không duyệt phiếu điểm rèn luyện.")
         if current_user.role != UserRole.ADMIN and not semester_evaluation_calendar_open(semester):
             raise ValueError("Học kỳ đã đóng theo mốc thời gian đánh giá; không thể lưu phiếu.")
         if not can_manage_student(current_user, target_student):
@@ -2596,6 +2919,7 @@ def save_submission_scores(
         permissions = score_permissions(current_user, target_student, submission, semester)
         note_perms = note_permissions(current_user, target_student, submission, semester)
         locked_titles = auto_locked_titles(session, semester.id)
+        now = current_app_time()
 
         for score in submission.scores:
             row = payload.get(score.criterion_id, {})
@@ -2618,13 +2942,20 @@ def save_submission_scores(
             submission.status = "draft"
             if note_perms["student_note_editable"]:
                 submission.student_note = notes.get("student_note", "").strip()
+        elif action == "save_class":
+            if not permissions["class_editable"]:
+                raise ValueError("Bạn không thể lưu phiếu ở bước ban cán sự.")
+            if note_perms["class_note_editable"]:
+                submission.class_note = notes.get("class_note", "").strip()
+            for score in submission.scores:
+                score.advisor_score = score.class_score
         elif action == "submit_student":
             if not permissions["self_editable"]:
                 raise ValueError("Bạn không thể gửi phiếu điểm ở giai đoạn hiện tại.")
             submission.status = "student_submitted"
             if note_perms["student_note_editable"]:
                 submission.student_note = notes.get("student_note", "").strip()
-            submission.submitted_at = DEMO_NOW
+            submission.submitted_at = now
             for score in submission.scores:
                 score.class_score = score.self_score
                 score.advisor_score = score.self_score
@@ -2634,7 +2965,7 @@ def save_submission_scores(
             submission.status = "class_reviewed"
             if note_perms["class_note_editable"]:
                 submission.class_note = notes.get("class_note", "").strip()
-            submission.class_reviewed_at = DEMO_NOW
+            submission.class_reviewed_at = now
             for score in submission.scores:
                 score.advisor_score = score.class_score
         elif action == "review_advisor":
@@ -2643,7 +2974,14 @@ def save_submission_scores(
             submission.status = "advisor_reviewed"
             if note_perms["advisor_note_editable"]:
                 submission.advisor_note = notes.get("advisor_note", "").strip()
-            submission.advisor_reviewed_at = DEMO_NOW
+            submission.advisor_reviewed_at = now
+        elif action == "reset":
+            if current_user.role != UserRole.ADMIN:
+                raise ValueError("Chỉ admin mới được đặt lại phiếu.")
+            submission.status = "draft"
+            submission.submitted_at = None
+            submission.class_reviewed_at = None
+            submission.advisor_reviewed_at = None
         else:
             raise ValueError("Hành động không hợp lệ.")
 
@@ -2732,11 +3070,37 @@ def export_conduct_pdf_bytes(current_user_id: int, target_student_id: int, semes
         )
 
 
-def create_admin_event(current_user_id: int, semester_id: int, criterion_id: int, name: str, points: float) -> None:
+def create_admin_event(
+    current_user_id: int,
+    semester_id: int,
+    criterion_id: int,
+    name: str,
+    points: float,
+    start_time: str,
+    end_time: str,
+    location: str,
+) -> None:
     ensure_reflex_demo_data()
     name = (name or "").strip()
+    normalized_start = normalize_event_datetime_input(start_time)
+    normalized_end = normalize_event_datetime_input(end_time)
+    resolved_location = (location or "").strip()
     if not name:
         raise ValueError("Tên sự kiện không được để trống.")
+    if not normalized_start:
+        raise ValueError("Thời gian bắt đầu không được để trống.")
+    if not normalized_end:
+        raise ValueError("Thời gian kết thúc không được để trống.")
+    if not resolved_location:
+        raise ValueError("Địa điểm không được để trống.")
+    parsed_start = parse_event_datetime(normalized_start)
+    parsed_end = parse_event_datetime(normalized_end)
+    if not parsed_start or not parsed_end:
+        raise ValueError("Thời gian sự kiện không hợp lệ.")
+    if parsed_end <= parsed_start:
+        raise ValueError("Thời gian kết thúc phải sau thời gian bắt đầu.")
+    if float(points) <= 0:
+        raise ValueError("Điểm tối đa phải lớn hơn 0.")
     with get_reflex_session() as session:
         current_user = session.get(User, current_user_id)
         if not current_user or current_user.role != UserRole.ADMIN:
@@ -2745,12 +3109,17 @@ def create_admin_event(current_user_id: int, semester_id: int, criterion_id: int
         criterion = session.get(Criterion, criterion_id)
         if not semester or not criterion:
             raise ValueError("Học kỳ hoặc tiêu chí không hợp lệ.")
+        if criterion.title not in AUTO_EVENT_CRITERIA_TITLES:
+            raise ValueError("Chỉ được tạo sự kiện cho 3 tiêu chí tự động tính điểm.")
         session.add(
             Event(
                 semester_id=semester_id,
                 criterion_id=criterion_id,
                 name=name,
                 points=float(points),
+                start_time=normalized_start,
+                end_time=normalized_end,
+                location=resolved_location,
                 is_active=True,
             )
         )
@@ -2768,6 +3137,11 @@ def approve_registered_event(current_user_id: int, participation_id: int) -> Non
             raise ValueError("Chỉ ban cán sự hoặc admin được duyệt tham gia sự kiện.")
         if not target_student or not can_manage_student(current_user, target_student):
             raise ValueError("Bạn không có quyền duyệt đăng ký sự kiện này.")
-        if current_user.role == UserRole.CLASS_MONITOR and current_user.id == participation.student_id:
-            raise ValueError("Ban cán sự không thể tự duyệt đăng ký sự kiện của chính mình.")
+        event = session.get(Event, participation.event_id)
+        semester = session.get(Semester, event.semester_id) if event else None
+        if current_user.role == UserRole.CLASS_MONITOR:
+            if not semester or not semester_evaluation_calendar_open(semester):
+                raise ValueError("Học kỳ không trong thời gian đánh giá; không thể duyệt sự kiện.")
+            if current_window_index(semester) != 0:
+                raise ValueError("Chỉ được duyệt sự kiện trong giai đoạn cập nhật, duyệt minh chứng.")
         approve_event_participation(session, participation_id)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import reflex as rx
 
 from ptit_reflex.state import ConductState, EVIDENCE_UPLOAD_ID
-from ptit_reflex.ui.common import action_button, checkbox_row, form_input, form_label, form_text_area, modal_shell
+from ptit_reflex.ui.primitives import action_button, checkbox_row, form_input, form_label, form_text_area, modal_shell
 from ptit_reflex.ui.styles import BORDER, MUTED, PRIMARY, PRIMARY_SOFT, SURFACE, TEXT
 
 
@@ -351,11 +351,7 @@ def evidence_detail_modal() -> rx.Component:
                             rx.box(
                                 rx.link(
                                     item["value"],
-                                    href=rx.cond(
-                                        item["upload_path"] != "",
-                                        rx.get_upload_url(item["upload_path"]),
-                                        item["href"],
-                                    ),
+                                    href=item["value"],
                                     is_external=True,
                                     color=PRIMARY,
                                     font_weight="600",
@@ -387,8 +383,8 @@ def evidence_detail_modal() -> rx.Component:
                 align="stretch",
             ),
             rx.hstack(
-                rx.cond(ConductState.selected_evidence_can_class_review, action_button("Duyệt ban cán sự", ConductState.approve_selected_evidence_class), rx.fragment()),
-                rx.cond(ConductState.selected_evidence_can_advisor_review, action_button("Duyệt CVHT", ConductState.approve_selected_evidence_advisor, background="#15803d"), rx.fragment()),
+                rx.cond(ConductState.selected_evidence_can_class_review, action_button("Duyệt", ConductState.approve_selected_evidence_class), rx.fragment()),
+                rx.cond(ConductState.selected_evidence_can_advisor_review, action_button("Duyệt", ConductState.approve_selected_evidence_advisor, background="#15803d"), rx.fragment()),
                 rx.cond(
                     ConductState.selected_evidence_can_class_review,
                     action_button("Từ chối", ConductState.reject_selected_evidence, background="#fff1f2", color=PRIMARY, border="1px solid #fecdd3"),
@@ -411,30 +407,12 @@ def evidence_detail_modal() -> rx.Component:
 
 
 def evidence_page() -> rx.Component:
+    show_embedded_semester_select = ConductState.active_tab != "students_evidence"
     return rx.vstack(
         rx.cond(
             ConductState.active_tab == "students_evidence",
             rx.text("Duyệt minh chứng", font_size="22px", font_weight="700", color=TEXT),
             rx.text("Khai báo minh chứng", font_size="22px", font_weight="700", color=TEXT),
-        ),
-        rx.cond(
-            ConductState.active_tab == "students_evidence",
-            rx.hstack(
-                rx.text("Sinh viên:", font_size="14px", font_weight="700", color=TEXT),
-                rx.select(
-                    ConductState.student_labels,
-                    value=ConductState.selected_student_label,
-                    on_change=ConductState.select_student_by_label,
-                    width="360px",
-                    max_width="100%",
-                    color=TEXT,
-                ),
-                spacing="3",
-                align="center",
-                flex_wrap="wrap",
-                width="100%",
-            ),
-            rx.fragment(),
         ),
         rx.cond(
             ConductState.grading_target_banner_text != "",
@@ -461,16 +439,29 @@ def evidence_page() -> rx.Component:
                             rx.text(ConductState.selected_student_name, font_size="13px", color=MUTED),
                             rx.text("•", font_size="13px", color=MUTED),
                             rx.text(ConductState.selected_student_class, font_size="13px", color=MUTED),
+                            rx.text("•", font_size="13px", color=MUTED),
+                            rx.text(ConductState.selected_semester_name, font_size="13px", color="#1d4ed8", font_weight="600"),
                             spacing="2",
                             align="center",
+                            flex_wrap="wrap",
                         ),
                         spacing="0",
                         align="start",
                     ),
-                    rx.select(ConductState.semester_names, value=ConductState.selected_semester_name, on_change=ConductState.select_semester_by_name, width="320px"),
+                    rx.cond(
+                        show_embedded_semester_select,
+                        rx.select(
+                            ConductState.semester_names,
+                            value=ConductState.selected_semester_name,
+                            on_change=ConductState.select_semester_by_name,
+                            width="320px",
+                        ),
+                        rx.fragment(),
+                    ),
                     justify="between",
                     align="center",
                     width="100%",
+                    flex_wrap="wrap",
                 ),
                 padding="16px 18px",
                 border_bottom=f"1px solid {BORDER}",
@@ -488,11 +479,7 @@ def evidence_page() -> rx.Component:
                     rx.hstack(
                         rx.text("Danh sách minh chứng", font_size="18px", font_weight="700", color=TEXT),
                         rx.hstack(
-                            rx.cond(
-                                (ConductState.active_tab != "students_evidence") & ConductState.can_create_evidence,
-                                action_button("Thêm mới", ConductState.open_evidence_modal),
-                                rx.fragment(),
-                            ),
+                            rx.cond(ConductState.can_create_evidence, action_button("Thêm mới", ConductState.open_evidence_modal), rx.fragment()),
                             action_button("Tải lại", ConductState.load, background="white", color=TEXT, border=f"1px solid {BORDER}"),
                             rx.box(rx.text("Tổng số: ", color=MUTED), rx.text(ConductState.evidence_count, color=PRIMARY, font_weight="700"), display="flex", align_items="center", gap="4px", padding="0 14px", height="38px", border=f"1px solid {BORDER}", border_radius="8px", background="white"),
                             rx.box(action_button("⚙", ConductState.toggle_column_config, background="white", color=TEXT, border=f"1px solid {BORDER}", padding="0 12px"), position="relative"),
@@ -510,7 +497,7 @@ def evidence_page() -> rx.Component:
                             rx.cond(
                                 ConductState.has_evidence_rows,
                                 rx.vstack(rx.foreach(ConductState.evidence_rows, evidence_row), width="100%", spacing="0", align="stretch"),
-                                rx.center(rx.vstack(rx.text("Không có dữ liệu", color=MUTED, font_size="16px", font_weight="600"), rx.text("Chưa có minh chứng trong danh mục đang chọn.", color=TEXT, font_size="13px"), spacing="2", align="center"), min_height="260px", min_width="900px"),
+                                rx.center(rx.vstack(rx.text("Không có dữ liệu", color="#9ca3af", font_size="16px", font_weight="500"), rx.text("Chưa có minh chứng trong danh mục đang chọn.", color="#c0c4cc", font_size="13px"), spacing="2", align="center"), min_height="260px", min_width="900px"),
                             ),
                             min_width="1164px",
                             width="100%",
