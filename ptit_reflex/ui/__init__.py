@@ -1,12 +1,11 @@
-from ptit_reflex.ui.common import (
+from ptit_reflex.ui.auth import login_page
+from ptit_reflex.ui.navigation import full_header_bar, sidebar
+from ptit_reflex.ui.primitives import flash_banner
+from ptit_reflex.ui.profile_views import student_info_card
+from ptit_reflex.ui.student_lists import (
     evidence_review_list_page,
     events_review_list_page,
-    flash_banner,
-    full_header_bar,
-    login_page,
     score_review_list_page,
-    sidebar,
-    student_info_card,
     students_list_page,
 )
 from ptit_reflex.ui.evidence import evidence_detail_modal, evidence_modal, evidence_page

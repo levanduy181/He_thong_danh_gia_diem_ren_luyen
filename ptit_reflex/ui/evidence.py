@@ -3,7 +3,7 @@ from __future__ import annotations
 import reflex as rx
 
 from ptit_reflex.state import ConductState, EVIDENCE_UPLOAD_ID
-from ptit_reflex.ui.common import action_button, checkbox_row, form_input, form_label, form_text_area, modal_shell
+from ptit_reflex.ui.primitives import action_button, checkbox_row, form_input, form_label, form_text_area, modal_shell
 from ptit_reflex.ui.styles import BORDER, MUTED, PRIMARY, PRIMARY_SOFT, SURFACE, TEXT
 
 
@@ -383,8 +383,8 @@ def evidence_detail_modal() -> rx.Component:
                 align="stretch",
             ),
             rx.hstack(
-                rx.cond(ConductState.selected_evidence_can_class_review, action_button("Duyệt ban cán sự", ConductState.approve_selected_evidence_class), rx.fragment()),
-                rx.cond(ConductState.selected_evidence_can_advisor_review, action_button("Duyệt CVHT", ConductState.approve_selected_evidence_advisor, background="#15803d"), rx.fragment()),
+                rx.cond(ConductState.selected_evidence_can_class_review, action_button("Duyệt", ConductState.approve_selected_evidence_class), rx.fragment()),
+                rx.cond(ConductState.selected_evidence_can_advisor_review, action_button("Duyệt", ConductState.approve_selected_evidence_advisor, background="#15803d"), rx.fragment()),
                 rx.cond(
                     ConductState.selected_evidence_can_class_review,
                     action_button("Từ chối", ConductState.reject_selected_evidence, background="#fff1f2", color=PRIMARY, border="1px solid #fecdd3"),

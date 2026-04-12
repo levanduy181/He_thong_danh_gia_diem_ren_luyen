@@ -9,5 +9,10 @@ __pycache__/
 data/*.db
 data/*.db-journal
 data/*.backup
+data/reflex_student_conduct_readable.md
+data/uploads/
+uploaded_files/
+err.log
+out.log
 reflex_demo.db
 reflex_demo.db-journal

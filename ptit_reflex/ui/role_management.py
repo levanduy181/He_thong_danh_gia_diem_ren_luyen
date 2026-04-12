@@ -3,7 +3,7 @@ from __future__ import annotations
 import reflex as rx
 
 from ptit_reflex.state import ConductState
-from ptit_reflex.ui.common import action_button, badge
+from ptit_reflex.ui.primitives import action_button, badge
 from ptit_reflex.ui.styles import BORDER, MUTED, PRIMARY, SURFACE, TEXT
 
 
