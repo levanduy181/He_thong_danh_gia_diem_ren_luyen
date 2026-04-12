@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+
+def _require_module(module_name: str, package_name: str) -> bool:
+    if importlib.util.find_spec(module_name) is not None:
+        return True
+    print(
+        (
+            f"Khong tim thay thu vien '{package_name}'. "
+            f"Hay chay '{sys.executable} -m pip install -r requirements.txt' truoc khi mo ung dung."
+        ),
+        file=sys.stderr,
+    )
+    return False
 
 
 def main() -> int:
@@ -34,6 +48,8 @@ def main() -> int:
     npm_path = shutil.which("npm", path=env.get("PATH"))
     if not npm_path:
         print("Khong tim thay npm. Hay cai Node.js LTS tu https://nodejs.org", file=sys.stderr)
+        return 1
+    if not _require_module("fpdf", "fpdf2"):
         return 1
 
     command = [sys.executable, "-m", "reflex", "run"]

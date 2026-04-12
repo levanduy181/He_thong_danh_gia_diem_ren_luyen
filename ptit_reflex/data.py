@@ -3047,7 +3047,14 @@ def register_event_for_student(current_user_id: int, target_student_id: int, eve
 
 
 def export_conduct_pdf_bytes(current_user_id: int, target_student_id: int, semester_id: int) -> bytes:
-    from ptit_reflex import pdf_export
+    try:
+        from ptit_reflex import pdf_export
+    except ModuleNotFoundError as exc:
+        if (exc.name or "").split(".")[0] == "fpdf":
+            raise ValueError(
+                "Thiếu thư viện tạo PDF (fpdf2). Hãy chạy 'pip install -r requirements.txt' rồi mở lại ứng dụng."
+            ) from exc
+        raise
 
     ensure_reflex_demo_data()
     with get_reflex_session() as session:
@@ -3073,19 +3080,29 @@ def export_conduct_pdf_bytes(current_user_id: int, target_student_id: int, semes
 
         groups = get_criteria_tree(session)
         score_map = {score.criterion_id: score for score in submission.scores}
-        rows: list[tuple[str, str, str, str, str]] = []
+        rows: list[dict[str, str]] = []
         for group in groups:
-            rows.append((vi(group.title), format_points(group.max_points), "—", "—", "—"))
+            rows.append(
+                {
+                    "kind": "group",
+                    "title": vi(group.title),
+                    "range": format_points(group.max_points),
+                    "self_score": "",
+                    "class_score": "",
+                    "advisor_score": "",
+                }
+            )
             for criterion in group.criteria:
                 score = score_map.get(criterion.id)
                 rows.append(
-                    (
-                        vi(criterion.title),
-                        format_points(criterion.max_points),
-                        format_points(score.self_score if score else 0.0),
-                        format_points(score.class_score if score else 0.0),
-                        format_points(score.advisor_score if score else 0.0),
-                    )
+                    {
+                        "kind": "item",
+                        "title": vi(criterion.title),
+                        "range": f"[{criterion.min_points:g} - {criterion.max_points:g}]",
+                        "self_score": format_points(score.self_score if score else 0.0),
+                        "class_score": format_points(score.class_score if score else 0.0),
+                        "advisor_score": format_points(score.advisor_score if score else 0.0),
+                    }
                 )
 
         eff = effective_conduct_total(submission)

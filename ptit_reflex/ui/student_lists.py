@@ -58,11 +58,6 @@ def _review_filters_row() -> rx.Component:
 def students_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Danh sách sinh viên", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Nhấn vào tên sinh viên để xem thông tin chi tiết; dùng nút bên phải để mở phiếu điểm rèn luyện.",
-            font_size="14px",
-            color=MUTED,
-        ),
         _review_filters_row(),
         rx.vstack(
             rx.foreach(

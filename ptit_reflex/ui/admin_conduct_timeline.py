@@ -25,11 +25,6 @@ def _admin_stage_block(title: str, lab, start, end, set_lab, set_start, set_end)
 def admin_conduct_timeline_page() -> rx.Component:
     return rx.vstack(
         rx.text("Mốc thời gian phiếu điểm rèn luyện", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Cấu hình 4 bước trên timeline (minh chứng → tự đánh giá → ban cán sự → CVHT). Áp dụng cho học kỳ đã chọn. Định dạng: dd/mm/yyyy hh:mm.",
-            font_size="14px",
-            color=MUTED,
-        ),
         rx.box(
             rx.vstack(
                 form_label("Học kỳ", required=True),

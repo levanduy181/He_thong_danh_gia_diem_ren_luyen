@@ -10,11 +10,6 @@ from ptit_reflex.ui.styles import BORDER, MUTED, TEXT
 def admin_events_page() -> rx.Component:
     return rx.vstack(
         rx.text("Tạo sự kiện", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Chỉ tạo các sự kiện tự động tính điểm rèn luyện trong học kỳ đã chọn. Sinh viên chỉ đăng ký được trong học kỳ đang hoạt động và điểm chỉ cộng cho đúng học kỳ của sự kiện đó.",
-            font_size="14px",
-            color=MUTED,
-        ),
         rx.box(
             rx.vstack(
                 form_label("Học kỳ", required=True),

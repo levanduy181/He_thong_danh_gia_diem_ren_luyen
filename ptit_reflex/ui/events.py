@@ -200,12 +200,6 @@ def events_page() -> rx.Component:
 def event_approval_page() -> rx.Component:
     return rx.vstack(
         rx.text("Duyệt sự kiện đã đăng ký", font_size="22px", font_weight="700", color=TEXT),
-        rx.text(
-            "Màn này chỉ hiển thị các sự kiện sinh viên đã đăng ký để ban cán sự duyệt, không hiển thị phần đăng ký sự kiện mới.",
-            font_size="14px",
-            color=MUTED,
-            line_height="1.7",
-        ),
         rx.box(
             rx.cond(
                 ConductState.has_registered_events,

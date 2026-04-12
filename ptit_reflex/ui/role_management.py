@@ -174,8 +174,8 @@ def role_management_table() -> rx.Component:
 def role_management_picker_page() -> rx.Component:
     description = rx.cond(
         ConductState.current_user_role == "admin",
-        "Chọn một lớp để mở danh sách tài khoản trong lớp đó. Tài khoản hệ thống được tách riêng ở góc phải.",
-        "Cố vấn học tập chỉ được đổi quyền giữa Sinh viên và Ban cán sự trong lớp mình phụ trách.",
+        "",
+        "",
     )
     return rx.vstack(
         rx.hstack(
