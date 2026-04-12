@@ -8,30 +8,46 @@ function Test-Command {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Try-CreateVenv {
+    param(
+        [string]$Command,
+        [string[]]$Arguments
+    )
+
+    if (-not (Test-Command $Command)) {
+        return $false
+    }
+
+    if (Test-Path ".venv") {
+        Remove-Item ".venv" -Recurse -Force
+    }
+
+    & $Command @Arguments 2>$null
+    return Test-Path ".venv\Scripts\python.exe"
+}
+
 function New-Venv {
     if (Test-Path ".venv\Scripts\python.exe") {
         return
     }
 
-    if (Test-Command "py") {
-        try {
-            & py -3.13 -m venv .venv
-            return
-        } catch {
-        }
-        try {
-            & py -3.12 -m venv .venv
-            return
-        } catch {
-        }
-    }
-
-    if (Test-Command "python") {
-        & python -m venv .venv
+    if (Try-CreateVenv "py" @("-3.13", "-m", "venv", ".venv")) {
         return
     }
 
-    throw "Khong tim thay Python. Hay cai Python 3.12 hoac 3.13 truoc."
+    if (Try-CreateVenv "py" @("-3.12", "-m", "venv", ".venv")) {
+        return
+    }
+
+    if (Try-CreateVenv "py" @("-3", "-m", "venv", ".venv")) {
+        return
+    }
+
+    if (Try-CreateVenv "python" @("-m", "venv", ".venv")) {
+        return
+    }
+
+    throw "Khong tao duoc .venv. Hay cai Python 3.12 hoac 3.13, mo terminal moi, roi chay lai."
 }
 
 function Ensure-Npm {

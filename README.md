@@ -27,6 +27,8 @@ Script `setup_and_run.ps1` sẽ tự:
 - cài `tslib` trong `.web` nếu thiếu
 - chạy ứng dụng
 
+Script sẽ tự thử lần lượt `py -3.13`, `py -3.12`, `py -3`, rồi `python`. Nếu vẫn không tạo được `.venv` thì máy đó chưa có Python dùng được.
+
 Sau khi chạy, mở `http://localhost:3000`.
 
 ## Chạy thủ công
@@ -97,6 +99,14 @@ mkdir data
 ### Thiếu `npm`
 
 Cài `Node.js LTS`, mở terminal mới rồi chạy lại app.
+
+### Script báo không tạo được `.venv`
+
+Máy đó chưa có Python chạy được từ terminal. Hãy cài `Python 3.12` hoặc `Python 3.13`, mở terminal mới, rồi chạy lại:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_and_run.ps1
+```
 
 ### Thiếu `fpdf2`
 
