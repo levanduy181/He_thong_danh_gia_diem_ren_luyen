@@ -229,6 +229,24 @@ def sidebar_nav_sub_item(label: str, tab_key: str) -> rx.Component:
     )
 
 
+def sidebar_nav_sub_indicator(label: str, tab_key: str) -> rx.Component:
+    active = ConductState.active_tab == tab_key
+    return rx.box(
+        rx.text(
+            label,
+            color=rx.cond(active, "white", "#6b7280"),
+            font_weight=rx.cond(active, "700", "500"),
+            font_size="13px",
+            line_height="1.45",
+        ),
+        padding="8px 12px 8px 28px",
+        border_radius="8px",
+        background=rx.cond(active, PRIMARY, "transparent"),
+        cursor="default",
+        width="100%",
+    )
+
+
 def sidebar_students_group() -> rx.Component:
     return rx.vstack(
         rx.hstack(
@@ -270,7 +288,7 @@ def sidebar_students_group() -> rx.Component:
                     padding_bottom="4px",
                 ),
                 rx.vstack(
-                    rx.cond(ConductState.show_students_score_tab, sidebar_nav_sub_item("Phiếu điểm rèn luyện", "students_score"), rx.fragment()),
+                    rx.cond(ConductState.show_students_score_tab, sidebar_nav_sub_indicator("Phiếu điểm rèn luyện", "students_score"), rx.fragment()),
                     rx.cond(ConductState.show_students_evidence_tab, sidebar_nav_sub_item("Duyệt minh chứng", "students_evidence"), rx.fragment()),
                     rx.cond(ConductState.show_students_events_tab, sidebar_nav_sub_item("Duyệt sự kiện", "students_events"), rx.fragment()),
                     spacing="2",
@@ -386,7 +404,7 @@ def students_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Danh sách sinh viên", font_size="22px", font_weight="700", color=TEXT),
         rx.text(
-            "Nhấn vào tên sinh viên để xem thông tin chi tiết; dùng nút bên phải để nhập GPA theo học kỳ cho từng sinh viên trong lớp.",
+            "Nhấn vào tên sinh viên để xem thông tin chi tiết; dùng nút bên phải để mở phiếu điểm rèn luyện.",
             font_size="14px",
             color=MUTED,
         ),
@@ -405,26 +423,22 @@ def students_list_page() -> rx.Component:
                                 cursor="pointer",
                                 on_click=ConductState.pick_student_open_info(row["label"]),
                             ),
-                            rx.text(row["score_status_label"], font_size="13px", color=MUTED),
-                            rx.text(row["conduct_grade"], font_size="12px", font_weight="600", color="#0369a1"),
+                            rx.hstack(
+                                rx.text("Điểm:", font_size="12px", font_weight="700", color=MUTED),
+                                rx.text(row["score_total"], font_size="12px", font_weight="700", color="#92400e"),
+                                rx.text("•", font_size="12px", color=MUTED),
+                                rx.text(row["conduct_grade"], font_size="12px", font_weight="700", color="#0369a1"),
+                                spacing="2",
+                                align="center",
+                                flex_wrap="wrap",
+                            ),
                             spacing="1",
                             align="start",
                         ),
                         rx.hstack(
-                            rx.box(
-                                rx.hstack(
-                                    rx.text("GPA:", font_size="12px", font_weight="700", color="#92400e"),
-                                    rx.text(row["gpa"], font_size="12px", font_weight="700", color="#92400e"),
-                                    spacing="1",
-                                    align="center",
-                                ),
-                                background="#fffbeb",
-                                border_radius="999px",
-                                padding="6px 12px",
-                            ),
                             action_button(
-                                "Nhập GPA",
-                                ConductState.pick_student_open_gpa(row["label"]),
+                                "Xem phiếu điểm rèn luyện",
+                                ConductState.pick_student_open_score(row["label"]),
                                 background="white",
                                 color=TEXT,
                                 border=f"1px solid {BORDER}",
@@ -458,101 +472,6 @@ def students_list_page() -> rx.Component:
     )
 
 
-def advisor_gpa_page() -> rx.Component:
-    return rx.vstack(
-        rx.hstack(
-            rx.vstack(
-                rx.text("Nhập GPA", font_size="22px", font_weight="700", color=TEXT),
-                rx.text(
-                    "Cố vấn học tập nhập GPA theo học kỳ. GPA này được dùng để tự tính tiêu chí kết quả học tập trong phiếu rèn luyện.",
-                    font_size="14px",
-                    color=MUTED,
-                    line_height="1.7",
-                ),
-                spacing="2",
-                align="start",
-            ),
-            action_button(
-                "Quay lại danh sách",
-                ConductState.select_tab("students"),
-                background="white",
-                color=TEXT,
-                border=f"1px solid {BORDER}",
-            ),
-            width="100%",
-            justify="between",
-            align="start",
-            flex_wrap="wrap",
-            spacing="3",
-        ),
-        rx.box(
-            rx.vstack(
-                rx.hstack(
-                    rx.vstack(
-                        rx.text(ConductState.selected_student_name, font_size="18px", font_weight="800", color=TEXT),
-                        rx.hstack(
-                            rx.text(ConductState.selected_student_code, font_size="13px", color=MUTED),
-                            rx.text("•", font_size="13px", color=MUTED),
-                            rx.text(ConductState.selected_student_class, font_size="13px", color=MUTED),
-                            spacing="2",
-                            align="center",
-                            flex_wrap="wrap",
-                        ),
-                        spacing="1",
-                        align="start",
-                    ),
-                    _review_semester_select(),
-                    width="100%",
-                    justify="between",
-                    align="start",
-                    flex_wrap="wrap",
-                    spacing="3",
-                ),
-                rx.box(
-                    form_label("GPA học kỳ", required=True),
-                    form_input(
-                        ConductState.advisor_gpa_input,
-                        "Ví dụ: 3.25",
-                        ConductState.set_advisor_gpa_input,
-                        input_type="number",
-                    ),
-                    rx.text("Nhập theo thang 4.0, ví dụ 3.0, 3.25, 3.6.", font_size="12px", color=MUTED),
-                    width="100%",
-                    max_width="360px",
-                ),
-                rx.hstack(
-                    action_button("Lưu GPA", ConductState.save_advisor_gpa),
-                    rx.box(
-                        rx.hstack(
-                            rx.text("GPA hiện tại:", font_size="12px", font_weight="700", color="#1d4ed8"),
-                            rx.text(ConductState.advisor_gpa_input, font_size="12px", font_weight="700", color="#1d4ed8"),
-                            spacing="1",
-                            align="center",
-                        ),
-                        padding="6px 12px",
-                        border_radius="999px",
-                        background="#eef2ff",
-                    ),
-                    spacing="3",
-                    align="center",
-                    flex_wrap="wrap",
-                ),
-                width="100%",
-                spacing="4",
-                align="stretch",
-            ),
-            width="100%",
-            background="white",
-            border=f"1px solid {BORDER}",
-            border_radius="12px",
-            padding="22px",
-        ),
-        width="100%",
-        align="stretch",
-        spacing="4",
-    )
-
-
 def score_review_list_page() -> rx.Component:
     return rx.vstack(
         rx.text("Duyệt phiếu điểm rèn luyện", font_size="22px", font_weight="700", color=TEXT),
@@ -577,13 +496,7 @@ def score_review_list_page() -> rx.Component:
                                 align="center",
                                 flex_wrap="wrap",
                             ),
-                            rx.hstack(
-                                badge(row["score_status_label"], "#eef2ff", color="#1d4ed8"),
-                                badge(row["conduct_grade"], "#f0fdf4", color="#166534"),
-                                spacing="2",
-                                align="center",
-                                flex_wrap="wrap",
-                            ),
+                            badge(row["conduct_grade"], "#f0fdf4", color="#166534"),
                             spacing="2",
                             align="start",
                             min_width="0",
@@ -937,6 +850,58 @@ def _student_profile_card() -> rx.Component:
         ),
         rx.fragment(),
     )
+    advisor_gpa_area = rx.cond(
+        ConductState.can_edit_student_gpa,
+        rx.box(
+            rx.vstack(
+                rx.hstack(
+                    rx.vstack(
+                        rx.text("GPA học kỳ", font_size="14px", font_weight="800", color=TEXT),
+                        rx.text(
+                            "Cố vấn nhập GPA tại đây để hệ thống tự tính tiêu chí kết quả học tập trong phiếu rèn luyện.",
+                            font_size="12px",
+                            color=MUTED,
+                            line_height="1.6",
+                        ),
+                        spacing="1",
+                        align="start",
+                    ),
+                    _review_semester_select(),
+                    width="100%",
+                    justify="between",
+                    align="start",
+                    flex_wrap="wrap",
+                    spacing="3",
+                ),
+                rx.hstack(
+                    rx.box(
+                        form_input(
+                            ConductState.advisor_gpa_input,
+                            "Ví dụ: 3.25",
+                            ConductState.set_advisor_gpa_input,
+                            input_type="number",
+                        ),
+                        width="240px",
+                        max_width="100%",
+                    ),
+                    action_button("Lưu GPA", ConductState.save_advisor_gpa),
+                    rx.text("Thang 4.0", font_size="12px", color=MUTED),
+                    spacing="3",
+                    align="center",
+                    flex_wrap="wrap",
+                ),
+                width="100%",
+                spacing="3",
+                align="stretch",
+            ),
+            width="100%",
+            padding="16px",
+            background="#fffbeb",
+            border="1px solid #fde68a",
+            border_radius="12px",
+        ),
+        rx.fragment(),
+    )
     display_content = rx.vstack(
         rx.grid(
             profile_item("Mã sinh viên", ConductState.student_profile["student_code"]),
@@ -969,6 +934,7 @@ def _student_profile_card() -> rx.Component:
             align="stretch",
             width="100%",
         ),
+        advisor_gpa_area,
         spacing="4",
         align="stretch",
         width="100%",
@@ -1150,7 +1116,7 @@ def login_page() -> rx.Component:
                     ConductState.auth_mode == "login",
                     rx.vstack(
                         form_label("Tên đăng nhập", required=True),
-                        form_input(ConductState.login_username, "Ví dụ: b23dccn001", ConductState.set_login_username),
+                        form_input(ConductState.login_username, "Ví dụ: admin hoặc CVHT001", ConductState.set_login_username),
                         form_label("Mật khẩu", required=True),
                         form_input(ConductState.login_password, "Nhập mật khẩu", ConductState.set_login_password, input_type="password"),
                         rx.cond(
@@ -1216,7 +1182,7 @@ def login_page() -> rx.Component:
                         form_label("Lớp", required=True),
                         form_input(
                             ConductState.register_class_name,
-                            "Ví dụ: D23CQAT04-B",
+                            "Ví dụ: D23CQAT01",
                             ConductState.set_register_field("register_class_name"),
                         ),
                         form_label("Khoa", required=True),
@@ -1274,11 +1240,13 @@ def login_page() -> rx.Component:
                         ConductState.auth_mode == "login",
                         rx.box(
                             rx.vstack(
-                                rx.text("Tài khoản demo", font_size="13px", color=TEXT, font_weight="700"),
-                                rx.text("Sinh viên: b23dccn001 / student123", font_size="12px", color=MUTED),
-                                rx.text("Ban cán sự: bancansu / bcs123", font_size="12px", color=MUTED),
-                                rx.text("Giảng viên (demo): covan / covan123", font_size="12px", color=MUTED),
+                                rx.text("Tài khoản mặc định", font_size="13px", color=TEXT, font_weight="700"),
                                 rx.text("Admin: admin / admin123", font_size="12px", color=MUTED),
+                                rx.text("Cố vấn D23CQAT01: CVHT001 / CVHT001", font_size="12px", color=MUTED),
+                                rx.text("Cố vấn D23CQAT02: CVHT002 / CVHT002", font_size="12px", color=MUTED),
+                                rx.text("Cố vấn D23CQCN01: CVHT003 / CVHT003", font_size="12px", color=MUTED),
+                                rx.text("Cố vấn D23CQCN02: CVHT004 / CVHT004", font_size="12px", color=MUTED),
+                                rx.text("Sinh viên mẫu: B23DCAT001 / B23DCAT001", font_size="12px", color=MUTED),
                                 spacing="1",
                                 align="start",
                             ),

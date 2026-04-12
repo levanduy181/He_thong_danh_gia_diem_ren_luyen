@@ -4,7 +4,6 @@ import reflex as rx
 
 from ptit_reflex.state import ConductState
 from ptit_reflex.ui import (
-    advisor_gpa_page,
     event_approval_page,
     evidence_review_list_page,
     events_review_list_page,
@@ -68,11 +67,7 @@ def main_tab_body() -> rx.Component:
                                                     rx.cond(
                                                             ConductState.active_tab == "students_evidence",
                                                             evidence_page(),
-                                                            rx.cond(
-                                                                ConductState.active_tab == "students_gpa",
-                                                                advisor_gpa_page(),
-                                                                rx.cond(ConductState.active_tab == "students_score", score_page(), score_page()),
-                                                            ),
+                                                            rx.cond(ConductState.active_tab == "students_score", score_page(), score_page()),
                                                         ),
                                                 ),
                                             ),

@@ -1,5 +1,4 @@
 from ptit_reflex.ui.common import (
-    advisor_gpa_page,
     evidence_review_list_page,
     events_review_list_page,
     flash_banner,
@@ -17,7 +16,6 @@ from ptit_reflex.ui.score import score_page
 
 __all__ = [
     "flash_banner",
-    "advisor_gpa_page",
     "full_header_bar",
     "login_page",
     "score_review_list_page",

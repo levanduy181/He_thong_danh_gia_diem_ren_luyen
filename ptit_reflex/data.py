@@ -40,13 +40,10 @@ def _password_matches(plain: str, stored: str | None) -> bool:
     return plain == (stored or "")
 
 
-DEFAULT_STUDENT_USERNAME = "b23dccn001"
-DEFAULT_CLASS_MONITOR_USERNAME = "bancansu"
-DEFAULT_ADVISOR_USERNAME = "covan"
+DEFAULT_ADVISOR_USERNAME = "CVHT001"
 DEFAULT_ADMIN_USERNAME = "admin"
 REFLEX_DATABASE_PATH = DATA_DIR / "reflex_student_conduct.db"
 REFLEX_DATABASE_URL = f"sqlite:///{REFLEX_DATABASE_PATH.as_posix()}"
-DEMO_NOW = datetime(2026, 4, 11, 12, 0)
 
 
 def current_app_time() -> datetime:
@@ -201,10 +198,6 @@ DEFAULT_CONDUCT_STAGE_LABELS = [
 
 
 TEXT_MAP = {
-    "Tran Minh Anh": "Trần Minh Anh",
-    "Le Thu Ha": "Lê Thu Hà",
-    "Nguyen Van Lop Truong": "Nguyễn Văn Lớp Trưởng",
-    "Nguyen Thi Co Van": "Nguyễn Thị Cố Vấn",
     "Quan tri he thong": "Quản trị hệ thống",
     "Cong nghe thong tin": "Công nghệ thông tin",
     "Ky thuat phan mem": "Kỹ thuật phần mềm",
@@ -289,26 +282,38 @@ CATEGORY_LABELS = {item["key"]: item["label"] for item in EVIDENCE_CATEGORIES}
 
 
 CLASSROOMS = {
-    "D23CQAT04-B": {
-        "advisor_username": "covan",
-        "advisor_name": "Nguyễn Trung Thành",
-        "class_monitor_username": "bancansu",
-        "class_monitor_name": "Nguyễn Văn Lớp Trưởng",
+    "D23CQAT01": {
+        "advisor_username": "CVHT001",
+        "advisor_name": "Cố vấn học tập 001",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
     },
-    "D23CQAT03-B": {
-        "advisor_username": "covan03",
-        "advisor_name": "Trần Thu Hương",
-        "class_monitor_username": "bancansu03",
-        "class_monitor_name": "Lê Đức Thành",
+    "D23CQAT02": {
+        "advisor_username": "CVHT002",
+        "advisor_name": "Cố vấn học tập 002",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
+    },
+    "D23CQCN01": {
+        "advisor_username": "CVHT003",
+        "advisor_name": "Cố vấn học tập 003",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+    },
+    "D23CQCN02": {
+        "advisor_username": "CVHT004",
+        "advisor_name": "Cố vấn học tập 004",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
     },
 }
 
 
-CLASS_MONITOR_USERNAMES = {config["class_monitor_username"] for config in CLASSROOMS.values()}
+CLASS_MONITOR_USERNAMES = {
+    config.get("class_monitor_username", "")
+    for config in CLASSROOMS.values()
+    if config.get("class_monitor_username")
+}
 STUDENT_LIKE_ROLES = [UserRole.STUDENT, UserRole.CLASS_MONITOR]
 REGISTER_FACULTY_OPTIONS = [
     "An toàn thông tin",
@@ -345,106 +350,126 @@ ROLE_MANAGEMENT_ROLE_ORDER = {
 }
 
 
-STUDENT_PROFILES = {
-    "b23dccn001": {
-        "student_code": "B23DCAT074",
-        "full_name": "Trần Minh Anh",
-        "class_name": "D23CQAT04-B",
-        "email": "minhanh.b23dcat074@stu.ptit.edu.vn",
-        "phone": "0344 584 578",
+STUDENT_PROFILES: dict[str, dict] = {
+    "B23DCAT001": {
+        "student_code": "B23DCAT001",
+        "full_name": "Nguyễn An Khang",
+        "class_name": "D23CQAT01",
+        "email": "b23dcat001@stu.ptit.edu.vn",
+        "phone": "0901000001",
         "gender": "Nam",
-        "birth_date": "18/10/2005",
-        "status": "Đang học",
-        "faculty": "An toàn thông tin",
-        "major": "An toàn thông tin",
-        "address": "Mộ Lao, Hà Đông, Hà Nội",
-        "citizen_id": "040205017684",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.10, "cpa": 3.18, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.22, "cpa": 3.31, "credits": 16, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.38, "cpa": 3.34, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.28, "cpa": 3.33, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
-    },
-    "b23dccn002": {
-        "student_code": "B23DCAT075",
-        "full_name": "Lê Thu Hà",
-        "class_name": "D23CQAT04-B",
-        "email": "thuha.b23dcat075@stu.ptit.edu.vn",
-        "phone": "0965 224 810",
-        "gender": "Nữ",
-        "birth_date": "21/03/2005",
-        "status": "Đang học",
-        "faculty": "An toàn thông tin",
-        "major": "An toàn thông tin",
-        "address": "Thanh Xuân, Hà Nội",
-        "citizen_id": "011205009999",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 2.74, "cpa": 2.81, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 2.98, "cpa": 2.89, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.11, "cpa": 2.96, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.05, "cpa": 2.99, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
-    },
-    "bancansu": {
-        "student_code": "B23DCAT401",
-        "full_name": "Nguyễn Văn Lớp Trưởng",
-        "class_name": "D23CQAT04-B",
-        "email": "bancansu@ptit.edu.vn",
-        "phone": "0912 000 401",
-        "gender": "Nam",
-        "birth_date": "12/05/2004",
+        "birth_date": "2005-01-12",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Hà Đông, Hà Nội",
         "citizen_id": "",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.20, "cpa": 3.15, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.25, "cpa": 3.22, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.30, "cpa": 3.24, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.28, "cpa": 3.26, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "semester_metrics": {},
     },
-    "bancansu03": {
-        "student_code": "B23DCAT302",
-        "full_name": "Lê Đức Thành",
-        "class_name": "D23CQAT03-B",
-        "email": "bancansu03@ptit.edu.vn",
-        "phone": "0912 000 302",
-        "gender": "Nam",
-        "birth_date": "03/11/2004",
+    "B23DCAT002": {
+        "student_code": "B23DCAT002",
+        "full_name": "Trần Minh Anh",
+        "class_name": "D23CQAT01",
+        "email": "b23dcat002@stu.ptit.edu.vn",
+        "phone": "0901000002",
+        "gender": "Nữ",
+        "birth_date": "2005-03-18",
+        "status": "Đang học",
+        "faculty": "An toàn thông tin",
+        "major": "An toàn thông tin",
+        "address": "Thanh Xuân, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCAT003": {
+        "student_code": "B23DCAT003",
+        "full_name": "Lê Thu Hà",
+        "class_name": "D23CQAT02",
+        "email": "b23dcat003@stu.ptit.edu.vn",
+        "phone": "0901000003",
+        "gender": "Nữ",
+        "birth_date": "2005-06-02",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
         "address": "Cầu Giấy, Hà Nội",
         "citizen_id": "",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.05, "cpa": 3.02, "credits": 15, "conduct_rank": "Khá"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.12, "cpa": 3.08, "credits": 16, "conduct_rank": "Khá"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.18, "cpa": 3.11, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.15, "cpa": 3.12, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "semester_metrics": {},
     },
-    "b23dccn003": {
-        "student_code": "B23DCAT102",
+    "B23DCAT004": {
+        "student_code": "B23DCAT004",
         "full_name": "Phạm Gia Hân",
-        "class_name": "D23CQAT03-B",
-        "email": "giahan.b23dcat102@stu.ptit.edu.vn",
-        "phone": "0912 456 321",
+        "class_name": "D23CQAT02",
+        "email": "b23dcat004@stu.ptit.edu.vn",
+        "phone": "0901000004",
         "gender": "Nữ",
-        "birth_date": "02/08/2005",
+        "birth_date": "2005-09-21",
         "status": "Đang học",
         "faculty": "An toàn thông tin",
         "major": "An toàn thông tin",
-        "address": "Thủ Đức, TP. Hồ Chí Minh",
-        "citizen_id": "079205004444",
-        "semester_metrics": {
-            "Hoc ky 1 nam hoc 2024-2025": {"gpa": 3.42, "cpa": 3.40, "credits": 15, "conduct_rank": "Giỏi"},
-            "Hoc ky 2 nam hoc 2024-2025": {"gpa": 3.31, "cpa": 3.36, "credits": 16, "conduct_rank": "Giỏi"},
-            "Hoc ky 1 nam hoc 2025-2026": {"gpa": 3.48, "cpa": 3.39, "credits": 17, "conduct_rank": "Chưa xếp loại"},
-            "Hoc ky 2 nam hoc 2025-2026": {"gpa": 3.35, "cpa": 3.38, "credits": 18, "conduct_rank": "Chưa xếp loại"},
-        },
+        "address": "Đống Đa, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN001": {
+        "student_code": "B23DCCN001",
+        "full_name": "Nguyễn Hoàng Nam",
+        "class_name": "D23CQCN01",
+        "email": "b23dccn001@stu.ptit.edu.vn",
+        "phone": "0902000001",
+        "gender": "Nam",
+        "birth_date": "2005-02-14",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Nam Từ Liêm, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN002": {
+        "student_code": "B23DCCN002",
+        "full_name": "Võ Ngọc Linh",
+        "class_name": "D23CQCN01",
+        "email": "b23dccn002@stu.ptit.edu.vn",
+        "phone": "0902000002",
+        "gender": "Nữ",
+        "birth_date": "2005-04-09",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Hoàng Mai, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN003": {
+        "student_code": "B23DCCN003",
+        "full_name": "Đặng Quốc Huy",
+        "class_name": "D23CQCN02",
+        "email": "b23dccn003@stu.ptit.edu.vn",
+        "phone": "0902000003",
+        "gender": "Nam",
+        "birth_date": "2005-07-27",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Long Biên, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
+    },
+    "B23DCCN004": {
+        "student_code": "B23DCCN004",
+        "full_name": "Bùi Khánh Vy",
+        "class_name": "D23CQCN02",
+        "email": "b23dccn004@stu.ptit.edu.vn",
+        "phone": "0902000004",
+        "gender": "Nữ",
+        "birth_date": "2005-11-05",
+        "status": "Đang học",
+        "faculty": "Công nghệ thông tin",
+        "major": "Công nghệ thông tin",
+        "address": "Ba Đình, Hà Nội",
+        "citizen_id": "",
+        "semester_metrics": {},
     },
 }
 
@@ -503,14 +528,6 @@ DETAIL_FIELDS = {
 }
 
 
-LOGIN_DEMO_ACCOUNTS = {
-    "admin": {"username": DEFAULT_ADMIN_USERNAME, "password": "admin123"},
-    "advisor": {"username": DEFAULT_ADVISOR_USERNAME, "password": "covan123"},
-    "class_monitor": {"username": DEFAULT_CLASS_MONITOR_USERNAME, "password": "bcs123"},
-    "student": {"username": DEFAULT_STUDENT_USERNAME, "password": "student123"},
-}
-
-
 AUTO_EVENT_CRITERIA_TITLES = {
     STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
     CLASS_MEETING_EVENT_CRITERION_TITLE,
@@ -520,10 +537,7 @@ AUTO_EVENT_CRITERIA_TITLES = {
 
 SEEDED_USERNAMES = {
     DEFAULT_ADMIN_USERNAME,
-    DEFAULT_ADVISOR_USERNAME,
-    DEFAULT_CLASS_MONITOR_USERNAME,
-    "covan03",
-    "bancansu03",
+    *(config["advisor_username"] for config in CLASSROOMS.values()),
     *STUDENT_PROFILES.keys(),
 }
 SUPPRESSED_SEED_USERS_PATH = DATA_DIR / "suppressed_seed_users.json"
@@ -557,6 +571,106 @@ VISIBLE_ZEROS = {
 }
 
 
+HISTORICAL_SCORE_PRESETS = [
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 7.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 3.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 3.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 12.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 3.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 7.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 2.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 2.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 2.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 4.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 4.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 3.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 8.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 4.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 13.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 4.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 3.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 2.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 2.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 0.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 8.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 5.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 14.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 4.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 4.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 3.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 3.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 3.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 7.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 4.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 2.0,
+    },
+    {
+        "Y thuc va thai do trong hoc tap": 3.0,
+        "Ket qua hoc tap trong ky hoc": 10.0,
+        "Y thuc chap hanh tot noi quy ve cac ky thi": 4.0,
+        STUDY_ACTIVITY_EVENT_CRITERION_TITLE: 5.0,
+        RISING_SPIRIT_CRITERION_TITLE: 1.0,
+        "Thuc hien nghiem tuc cac noi quy, quy che, cac quy dinh hien hanh trong Hoc vien.": 15.0,
+        "Thuc hien quy dinh ve cong tac noi tru, ngoai tru": 0.0,
+        CLASS_MEETING_EVENT_CRITERION_TITLE: 5.0,
+        CAREER_WORKSHOP_EVENT_CRITERION_TITLE: 5.0,
+        "Tham gia day du cac hoat dong chinh tri, xa hoi, the thao, tinh nguyen, cac buoi sinh hoat chuyen de": 8.0,
+        EVIDENCE_CRITERION_MAP["social_work"]: 4.0,
+        EVIDENCE_CRITERION_MAP["positive_promotion"]: 3.0,
+        "Tich cuc tham gia hoat dong phong chong toi pham, bao cao hanh vi lien quan toi ma tuy, te nan xa hoi": 3.0,
+        "Dua tin sai lech, thieu kiem chung, binh luan tieu cuc ve Hoc vien/Khoa": 0.0,
+        "Chap hanh nghiem chinh chu truong cua Dang, phap luat cua Nha nuoc va dia phuong": 8.0,
+        "Tich cuc tham gia tuyen truyen phap luat, co y thuc giu gin ve sinh chung": 5.0,
+        "Co moi quan he dung muc voi Thay/Co, can bo, nhan vien Hoc vien": 5.0,
+        "Co moi quan he tot voi ban be trong lop; tinh than doan ket, chia se, giup do": 5.0,
+        "Duoc bieu duong khen thuong trong cac hoat dong y thuc cong dan": 1.0,
+        "Vi pham an ninh, trat tu xa hoi, an toan giao thong": 0.0,
+        CLASS_MONITOR_ROLE_CRITERION_TITLE: 0.0,
+        EVIDENCE_CRITERION_MAP["special_achievement"]: 0.0,
+    },
+]
+
+
 SEMESTER_STAGE_OVERRIDES = {
     "Hoc ky 1 nam hoc 2025-2026": [
         (datetime(2025, 8, 1, 0, 0), datetime(2026, 1, 31, 23, 45), "Cập nhật, duyệt minh chứng"),
@@ -573,81 +687,7 @@ SEMESTER_STAGE_OVERRIDES = {
 }
 
 
-JOINED_EVENTS = [
-    {
-        "id": "joined-1",
-        "date": "Thứ tư, ngày 12/03/2025",
-        "count": "1",
-        "time": "18:00",
-        "accent": "#b774ff",
-        "title": "Họp lớp: D23CQAT04-B - P102 A2",
-        "type_label": "Họp lớp",
-        "event_name": "Họp lớp: D23CQAT04-B",
-        "start_time": "18:00 12/03/2025",
-        "end_time": "19:45 12/03/2025",
-        "location": "P102 A2",
-        "counts_to_score": "--",
-        "note": "P102 A2, trực tiếp",
-    },
-    {
-        "id": "joined-2",
-        "date": "Thứ tư, ngày 30/07/2025",
-        "count": "1",
-        "time": "20:30",
-        "accent": "#b774ff",
-        "title": "Họp lớp: D23CQAT04-B - Online",
-        "type_label": "Họp lớp",
-        "event_name": "Họp lớp: D23CQAT04-B",
-        "start_time": "20:30 30/07/2025",
-        "end_time": "21:30 30/07/2025",
-        "location": "Online",
-        "counts_to_score": "--",
-        "note": "Google Meet",
-    },
-    {
-        "id": "joined-3",
-        "date": "Chủ nhật, ngày 21/09/2025",
-        "count": "1",
-        "time": "15:18",
-        "accent": "#5bb5e8",
-        "title": "Chung kết Cuộc thi sinh viên với An toàn thông tin CTF 2025 - Hội trường 1, Cơ sở Hà Đông",
-        "type_label": "Cuộc thi",
-        "event_name": "Chung kết Cuộc thi sinh viên với An toàn thông tin CTF 2025",
-        "start_time": "15:18 21/09/2025",
-        "end_time": "17:30 21/09/2025",
-        "location": "Hội trường 1, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Sự kiện trực tiếp",
-    },
-]
-
-
-REGISTERED_EVENT_DETAILS = {
-    "Sinh hoạt lớp đầu học kỳ 2026": {
-        "type_label": "Họp lớp",
-        "start_time": "08:00 22/06/2026",
-        "end_time": "09:30 22/06/2026",
-        "location": "Phòng B3-201, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Điểm được cộng vào tiêu chí tham gia họp lớp, sinh hoạt đoàn thể.",
-    },
-    "Seminar nghiên cứu khoa học ATTT 2026": {
-        "type_label": "Học thuật",
-        "start_time": "19:30 10/05/2026",
-        "end_time": "21:00 10/05/2026",
-        "location": "Hội trường A1, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Điểm được cộng vào tiêu chí hoạt động ngoại khóa, học thuật, chuyên môn.",
-    },
-    "Ngày hội việc làm Cyber Security 2026": {
-        "type_label": "Hội thảo việc làm",
-        "start_time": "09:00 18/04/2026",
-        "end_time": "11:30 18/04/2026",
-        "location": "Hội trường A2, Cơ sở Hà Đông",
-        "counts_to_score": "Có",
-        "note": "Điểm được cộng vào tiêu chí hội thảo việc làm, định hướng nghề nghiệp.",
-    },
-}
+REGISTERED_EVENT_DETAILS: dict[str, dict[str, str]] = {}
 
 
 @contextmanager
@@ -1383,8 +1423,10 @@ def role_assignment_permissions(current_user: User, target_user: User) -> dict[s
         return permissions
     if target_user.role == UserRole.STUDENT:
         permissions["can_set_class_monitor"] = True
+        permissions["can_delete_account"] = True
     elif target_user.role == UserRole.CLASS_MONITOR:
         permissions["can_set_student"] = True
+        permissions["can_delete_account"] = True
     return permissions
 
 
@@ -1814,6 +1856,8 @@ def refresh_all_submission_automatic_scores(session: Session) -> None:
     for submission in submissions:
         if not submission.student or not submission.semester:
             continue
+        if submission.status == "advisor_reviewed":
+            continue
         apply_automatic_scores(session, submission, submission.student, submission.semester)
         recompute_totals(submission)
     session.flush()
@@ -1908,133 +1952,31 @@ def ensure_reflex_submission(
     return submission
 
 
-def ensure_demo_evidences(session: Session, users_by_username: dict[str, User], semesters_by_name: dict[str, Semester]) -> None:
-    if session.scalar(select(ReflexEvidence.id).limit(1)):
-        return
-
-    student_1 = users_by_username.get(DEFAULT_STUDENT_USERNAME)
-    student_2 = users_by_username.get("b23dccn002")
-    class_monitor = users_by_username.get(DEFAULT_CLASS_MONITOR_USERNAME)
-    active_semester = semesters_by_name.get("Hoc ky 2 nam hoc 2025-2026")
-    if not student_1 or not student_2 or not class_monitor or not active_semester:
-        return
-
-    evidences = [
-        (
-            student_1,
-            student_1,
-            "special_achievement",
-            {
-                "award_level": "Giải Nhì cấp Học viện",
-                "activity_content": "Đạt giải trong cuộc thi học thuật ATTT",
-                "participation_time": "2026-03-18",
-                "url": "https://ptit.edu.vn/thanh-tich-attt",
-                "file_name": "giai-nhi-attt.pdf",
-            },
-            "pending_class",
-        ),
-        (
-            student_1,
-            student_1,
-            "positive_promotion",
-            {
-                "activity_content": "Chia sẻ bài viết truyền thông tuyển sinh PTIT 2026",
-                "event_name": "Truyền thông tuyển sinh PTIT 2026",
-                "share_time": "2026-03-25",
-                "url": "https://facebook.com/ptit/post/2026",
-                "file_name": "screenshot-share.png",
-            },
-            "class_approved",
-        ),
-        (
-            student_1,
-            student_1,
-            "residence",
-            {
-                "residence_type": "Ngoại trú",
-                "city": "Hà Nội",
-                "district": "Hà Đông",
-                "ward": "Mộ Lao",
-                "street_address": "Số 12, ngõ 24 Nguyễn Khuyến",
-                "host_name": "Phạm Văn Hùng",
-                "host_phone": "0988123456",
-            },
-            "class_approved",
-        ),
-        (
-            student_2,
-            student_2,
-            "residence",
-            {
-                "residence_type": "Nội trú",
-                "dormitory": "KTX Hà Đông",
-                "room_number": "A-305",
-            },
-            "class_approved",
-        ),
-        (
-            student_2,
-            class_monitor,
-            "social_work",
-            {
-                "social_type": "Hiến máu nhân đạo",
-                "participation_time": "2026-02-15",
-                "url": "https://ptit.edu.vn/hien-mau",
-                "file_name": "giay-xac-nhan-hien-mau.pdf",
-            },
-            "advisor_approved",
-        ),
-    ]
-
-    for student, creator, category_key, payload, status in evidences:
-        session.add(
-            ReflexEvidence(
-                student_id=student.id,
-                created_by_id=creator.id,
-                semester_id=active_semester.id,
-                category_key=category_key,
-                summary=summary_from_payload(category_key, payload),
-                payload_json=json.dumps(payload, ensure_ascii=False),
-                status=status,
-                created_at=DEMO_NOW - timedelta(days=2),
-                submitted_at=DEMO_NOW - timedelta(days=2),
-                class_reviewed_at=DEMO_NOW - timedelta(days=1) if status in {"class_approved", "advisor_approved"} else None,
-                advisor_reviewed_at=DEMO_NOW if status == "advisor_approved" else None,
-            )
-        )
-
-
-def ensure_demo_event_participations(session: Session, student: User, semester: Semester) -> None:
-    active_events = get_active_events(session, semester.id)
-    if not active_events:
-        return
-    for event in active_events:
-        existing = session.scalar(
-            select(EventParticipation).where(
-                EventParticipation.student_id == student.id,
-                EventParticipation.event_id == event.id,
-            )
-        )
-        if existing:
-            continue
-        if event.name == "Sinh hoạt lớp đầu học kỳ 2026":
-            session.add(
-                EventParticipation(
-                    student_id=student.id,
-                    event_id=event.id,
-                    status=ParticipationStatus.PENDING,
-                    submitted_at=DEMO_NOW - timedelta(days=4),
+def ensure_historical_reflex_submissions(session: Session, students: list[User], semesters: list[Semester], criteria: list[Criterion]) -> None:
+    completed_semesters = [semester for semester in semesters if not semester.is_active]
+    target_semesters = completed_semesters[-4:]
+    for student_index, student in enumerate(students):
+        for semester_index, semester in enumerate(target_semesters):
+            existing = session.scalar(
+                select(ReflexSubmission.id).where(
+                    ReflexSubmission.student_id == student.id,
+                    ReflexSubmission.semester_id == semester.id,
                 )
             )
-            continue
-        if event.name == "Seminar nghiên cứu khoa học ATTT 2026":
-            session.add(
-                EventParticipation(
-                    student_id=student.id,
-                    event_id=event.id,
-                    status=ParticipationStatus.PENDING,
-                    submitted_at=DEMO_NOW - timedelta(days=1),
-                )
+            if existing:
+                continue
+            reviewed_at = datetime.combine(semester.end_date, time(16, 0))
+            preset = dict(HISTORICAL_SCORE_PRESETS[(semester_index + student_index) % len(HISTORICAL_SCORE_PRESETS)])
+            ensure_reflex_submission(
+                session,
+                student,
+                semester,
+                criteria,
+                status="advisor_reviewed",
+                preset=preset,
+                submitted_at=reviewed_at - timedelta(days=2),
+                class_reviewed_at=reviewed_at - timedelta(days=1),
+                advisor_reviewed_at=reviewed_at,
             )
 
 
@@ -2076,200 +2018,47 @@ def ensure_reflex_demo_data() -> None:
                 faculty="PTIT",
                 email="admin@ptit.edu.vn",
             )
-        if DEFAULT_ADVISOR_USERNAME not in suppressed_seed_usernames:
-            ensure_user(
-                session,
-                username=DEFAULT_ADVISOR_USERNAME,
-                password="covan123",
-                full_name=CLASSROOMS["D23CQAT04-B"]["advisor_name"],
-                role=UserRole.ADVISOR,
-                class_name="D23CQAT04-B",
-                faculty="An toàn thông tin",
-                major="An toàn thông tin",
-                email="covan@ptit.edu.vn",
-            )
-        if "covan03" not in suppressed_seed_usernames:
-            ensure_user(
-                session,
-                username="covan03",
-                password="covan123",
-                full_name=CLASSROOMS["D23CQAT03-B"]["advisor_name"],
-                role=UserRole.ADVISOR,
-                class_name="D23CQAT03-B",
-                faculty="An toàn thông tin",
-                major="An toàn thông tin",
-                email="covan03@ptit.edu.vn",
-            )
-        if DEFAULT_CLASS_MONITOR_USERNAME not in suppressed_seed_usernames:
-            class_monitor_profile = STUDENT_PROFILES.get(DEFAULT_CLASS_MONITOR_USERNAME, {})
-            ensure_user(
-                session,
-                username=DEFAULT_CLASS_MONITOR_USERNAME,
-                password="bcs123",
-                full_name=CLASSROOMS["D23CQAT04-B"]["class_monitor_name"],
-                role=UserRole.CLASS_MONITOR,
-                student_code="B23DCAT401",
-                class_name="D23CQAT04-B",
-                faculty="An toàn thông tin",
-                major="An toàn thông tin",
-                email="bancansu@ptit.edu.vn",
-                phone=class_monitor_profile.get("phone", ""),
-                birth_date=normalize_birth_date_input(class_monitor_profile.get("birth_date", "")),
-                gender=class_monitor_profile.get("gender", ""),
-                address=class_monitor_profile.get("address", ""),
-            )
-        if "bancansu03" not in suppressed_seed_usernames:
-            class_monitor_profile = STUDENT_PROFILES.get("bancansu03", {})
-            ensure_user(
-                session,
-                username="bancansu03",
-                password="bcs123",
-                full_name=CLASSROOMS["D23CQAT03-B"]["class_monitor_name"],
-                role=UserRole.CLASS_MONITOR,
-                student_code="B23DCAT302",
-                class_name="D23CQAT03-B",
-                faculty="An toàn thông tin",
-                major="An toàn thông tin",
-                email="bancansu03@ptit.edu.vn",
-                phone=class_monitor_profile.get("phone", ""),
-                birth_date=normalize_birth_date_input(class_monitor_profile.get("birth_date", "")),
-                gender=class_monitor_profile.get("gender", ""),
-                address=class_monitor_profile.get("address", ""),
-            )
-
-        for username, profile in STUDENT_PROFILES.items():
-            if username in CLASS_MONITOR_USERNAMES or username in suppressed_seed_usernames:
+        for class_name, config in CLASSROOMS.items():
+            username = str(config["advisor_username"])
+            if username in suppressed_seed_usernames:
                 continue
             ensure_user(
                 session,
                 username=username,
-                password="student123",
-                full_name=profile["full_name"],
+                password=username,
+                full_name=str(config["advisor_name"]),
+                role=UserRole.ADVISOR,
+                student_code=username,
+                class_name=class_name,
+                faculty=str(config["faculty"]),
+                major=str(config["major"]),
+                email=f"{username}@ptit.edu.vn",
+            )
+        for username, profile in STUDENT_PROFILES.items():
+            if username in suppressed_seed_usernames:
+                continue
+            ensure_user(
+                session,
+                username=username,
+                password=str(profile["student_code"]),
+                full_name=str(profile["full_name"]),
                 role=UserRole.STUDENT,
-                student_code=profile["student_code"],
-                email=profile["email"],
-                class_name=profile["class_name"],
-                faculty=profile["faculty"],
-                major=profile["major"],
-                phone=profile.get("phone", ""),
-                birth_date=normalize_birth_date_input(profile.get("birth_date", "")),
-                gender=profile.get("gender", ""),
-                address=profile.get("address", ""),
+                student_code=str(profile["student_code"]),
+                email=str(profile["email"]),
+                class_name=str(profile["class_name"]),
+                faculty=str(profile["faculty"]),
+                major=str(profile["major"]),
+                phone=str(profile.get("phone", "")),
+                birth_date=normalize_birth_date_input(str(profile.get("birth_date", ""))),
+                gender=str(profile.get("gender", "")),
+                address=str(profile.get("address", "")),
             )
 
-        students = list(session.scalars(select(User).where(User.role == UserRole.STUDENT).order_by(User.student_code)))
         semesters = list(session.scalars(select(Semester).order_by(Semester.start_date)))
         criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
-        users_by_username = {user.username: user for user in session.scalars(select(User))}
-        semesters_by_name = {semester.name: semester for semester in semesters}
-        active_semester = semesters_by_name.get("Hoc ky 2 nam hoc 2025-2026")
-        if active_semester:
-            demo_events = [
-                (
-                    "Ngày hội việc làm Cyber Security 2026",
-                    CAREER_WORKSHOP_EVENT_CRITERION_TITLE,
-                    1.0,
-                    "QR-JOBFAIR2026",
-                ),
-                (
-                    "Seminar nghiên cứu khoa học ATTT 2026",
-                    STUDY_ACTIVITY_EVENT_CRITERION_TITLE,
-                    2.0,
-                    "QR-TS2026",
-                ),
-                (
-                    "Sinh hoạt lớp đầu học kỳ 2026",
-                    CLASS_MEETING_EVENT_CRITERION_TITLE,
-                    1.0,
-                    "QR-MHX2026",
-                ),
-            ]
-            for event_name, criterion_title, points, qr_code in demo_events:
-                crit = session.scalar(select(Criterion).where(Criterion.title == criterion_title))
-                if not crit:
-                    continue
-                with session.no_autoflush:
-                    existing_event = session.scalar(select(Event).where((Event.name == event_name) | (Event.qr_code == qr_code)))
-                if existing_event:
-                    existing_event.semester_id = active_semester.id
-                    existing_event.criterion_id = crit.id
-                    existing_event.name = event_name
-                    existing_event.points = points
-                    existing_event.qr_code = qr_code
-                    existing_event.is_active = True
-                else:
-                    session.add(
-                        Event(
-                            semester_id=active_semester.id,
-                            criterion_id=crit.id,
-                            name=event_name,
-                            points=points,
-                            qr_code=qr_code,
-                            is_active=True,
-                        )
-                    )
-
-        for student in students:
-            for semester in semesters:
-                if student.username == DEFAULT_STUDENT_USERNAME and semester.name == "Hoc ky 2 nam hoc 2025-2026":
-                    ensure_reflex_submission(session, student, semester, criteria, status="draft", preset=DEFAULT_ACTIVE_SCORES)
-                    continue
-
-                if student.username == DEFAULT_STUDENT_USERNAME and semester.name == "Hoc ky 1 nam hoc 2025-2026":
-                    ensure_reflex_submission(
-                        session,
-                        student,
-                        semester,
-                        criteria,
-                        status="student_submitted",
-                        copy_legacy=True,
-                        submitted_at=datetime(2026, 4, 9, 20, 0),
-                    )
-                    continue
-
-                if student.username == "b23dccn002" and semester.name == "Hoc ky 1 nam hoc 2025-2026":
-                    ensure_reflex_submission(
-                        session,
-                        student,
-                        semester,
-                        criteria,
-                        status="draft",
-                        copy_legacy=True,
-                    )
-                    continue
-
-                ensure_reflex_submission(
-                    session,
-                    student,
-                    semester,
-                    criteria,
-                    status="draft",
-                    copy_legacy=True,
-                )
-
-        class_monitors = list(session.scalars(select(User).where(User.role == UserRole.CLASS_MONITOR)))
-        for class_monitor_user in class_monitors:
-            for semester in semesters:
-                ensure_reflex_submission(session, class_monitor_user, semester, criteria, status="draft", copy_legacy=False)
-
         sync_reflex_scores_with_criteria(session, criteria)
-        ensure_demo_evidences(session, users_by_username, semesters_by_name)
-        for evidence in session.scalars(select(ReflexEvidence).where(ReflexEvidence.status == "advisor_approved")):
-            evidence.status = "class_approved"
-            evidence.advisor_reviewed_at = None
-        default_student = users_by_username.get(DEFAULT_STUDENT_USERNAME)
-        default_active_semester = semesters_by_name.get("Hoc ky 2 nam hoc 2025-2026")
-        if default_student and default_active_semester:
-            ensure_demo_event_participations(session, default_student, default_active_semester)
-        for username in CLASS_MONITOR_USERNAMES:
-            class_monitor_user = users_by_username.get(username)
-            if class_monitor_user and default_active_semester:
-                ensure_demo_event_participations(
-                    session,
-                    class_monitor_user,
-                    default_active_semester,
-                )
-        refresh_all_submission_automatic_scores(session)
+        students = list(session.scalars(select(User).where(User.role.in_(STUDENT_LIKE_ROLES)).order_by(User.student_code)))
+        ensure_historical_reflex_submissions(session, students, semesters, criteria)
 
 
 def account_scope_students(session: Session, current_user: User) -> list[User]:
@@ -2292,6 +2081,8 @@ def account_scope_students(session: Session, current_user: User) -> list[User]:
 
 def preferred_student(session: Session, current_user: User, students: list[User], target_student_id: int | None) -> User:
     if current_user.role == UserRole.STUDENT:
+        return current_user
+    if not students:
         return current_user
     if target_student_id:
         found = next((student for student in students if student.id == target_student_id), None)
@@ -2614,7 +2405,7 @@ def build_snapshot(
         )
         current_user = next((user for user in accounts if user.id == current_user_id), None)
         if current_user is None:
-            current_user = next(user for user in accounts if user.username == DEFAULT_STUDENT_USERNAME)
+            current_user = next((user for user in accounts if user.username == DEFAULT_ADMIN_USERNAME), accounts[0])
 
         students = account_scope_students(session, current_user)
         target_student = preferred_student(session, current_user, students, target_student_id)
@@ -2627,21 +2418,33 @@ def build_snapshot(
             category_key = EVIDENCE_CATEGORIES[0]["key"]
 
         criteria = list(session.scalars(select(Criterion).order_by(Criterion.group_id, Criterion.display_order)))
-        submission = ensure_reflex_submission(
-            session,
-            target_student,
-            selected_semester,
-            criteria,
-            status="draft",
-            copy_legacy=True,
-        )
-        apply_automatic_scores(session, submission, target_student, selected_semester)
-        recompute_totals(submission)
-        permissions = score_permissions(current_user, target_student, submission, selected_semester)
-        note_perms = note_permissions(current_user, target_student, submission, selected_semester)
+        target_is_student = target_student.role in STUDENT_LIKE_ROLES
+        if target_is_student:
+            submission = ensure_reflex_submission(
+                session,
+                target_student,
+                selected_semester,
+                criteria,
+                status="draft",
+                copy_legacy=True,
+            )
+            if submission.status != "advisor_reviewed":
+                apply_automatic_scores(session, submission, target_student, selected_semester)
+            recompute_totals(submission)
+            permissions = score_permissions(current_user, target_student, submission, selected_semester)
+            note_perms = note_permissions(current_user, target_student, submission, selected_semester)
+            score_map = {score.criterion_id: score for score in submission.scores}
+        else:
+            submission = None
+            permissions = {"self_editable": False, "class_editable": False, "advisor_editable": False}
+            note_perms = {
+                "student_note_editable": False,
+                "class_note_editable": False,
+                "advisor_note_editable": False,
+            }
+            score_map = {}
         locked_titles = auto_locked_titles(session, selected_semester.id)
         groups = get_criteria_tree(session)
-        score_map = {score.criterion_id: score for score in submission.scores}
         score_rows: list[dict] = []
         for group in groups:
             score_rows.append(
@@ -2665,7 +2468,8 @@ def build_snapshot(
             for criterion in group.criteria:
                 score = score_map.get(criterion.id)
                 hide_zero = (
-                    semester_evaluation_calendar_open(selected_semester)
+                    submission is not None
+                    and semester_evaluation_calendar_open(selected_semester)
                     and submission.status == "draft"
                     and criterion.title not in VISIBLE_ZEROS
                 )
@@ -2689,18 +2493,20 @@ def build_snapshot(
                     }
                 )
 
-        evidences = list(
-            session.scalars(
-                select(ReflexEvidence)
-                .where(
-                    ReflexEvidence.student_id == target_student.id,
-                    ReflexEvidence.semester_id == selected_semester.id,
-                    ReflexEvidence.category_key == category_key,
+        evidences = []
+        if target_is_student:
+            evidences = list(
+                session.scalars(
+                    select(ReflexEvidence)
+                    .where(
+                        ReflexEvidence.student_id == target_student.id,
+                        ReflexEvidence.semester_id == selected_semester.id,
+                        ReflexEvidence.category_key == category_key,
+                    )
+                    .options(joinedload(ReflexEvidence.creator))
+                    .order_by(ReflexEvidence.created_at.desc())
                 )
-                .options(joinedload(ReflexEvidence.creator))
-                .order_by(ReflexEvidence.created_at.desc())
             )
-        )
         evidence_rows = []
         for index, evidence in enumerate(evidences, start=1):
             perms = evidence_permissions(current_user, target_student, evidence, selected_semester)
@@ -2720,7 +2526,10 @@ def build_snapshot(
                 }
             )
 
-        joined_events, registered_events, open_events = build_event_lists(session, current_user, target_student, selected_semester)
+        if target_is_student:
+            joined_events, registered_events, open_events = build_event_lists(session, current_user, target_student, selected_semester)
+        else:
+            joined_events, registered_events, open_events = [], [], []
 
         student_ids = [student.id for student in students]
         student_submission_map = {
@@ -2766,6 +2575,13 @@ def build_snapshot(
         role_management_rows = build_role_management_rows(session, current_user)
         role_management_classes = build_role_management_classes(role_management_rows)
         profile_card = student_profile_snapshot(session, target_student, selected_semester.name)
+        submission_status = submission.status if submission else ""
+        submission_status_label = SUBMISSION_LABELS.get(submission_status, submission_status) if submission else ""
+        score_total = format_points(submission.self_total if submission else 0.0)
+        score_effective_total = format_points(effective_conduct_total(submission))
+        score_total_class = format_points(submission.class_total if submission else 0.0)
+        score_total_advisor = format_points(submission.advisor_total if submission else 0.0)
+        conduct_label = conduct_grade_label(effective_conduct_total(submission)) if submission else "—"
         return {
             "selected_account_id": current_user.id,
             "current_user_name": vi(current_user.full_name),
@@ -2780,26 +2596,29 @@ def build_snapshot(
             "role_management_classes": role_management_classes,
             "students": student_items,
             "selected_student_id": target_student.id,
-            "selected_student_label": next(item["label"] for item in student_items if item["id"] == target_student.id),
+            "selected_student_label": next(
+                (item["label"] for item in student_items if item["id"] == target_student.id),
+                f"{vi(target_student.full_name)} - {target_student.student_code or ''}".strip(),
+            ),
             "selected_student_name": vi(target_student.full_name),
             "selected_student_code": target_student.student_code or "",
             "selected_student_class": target_student.class_name or "",
             "semesters": [{"id": semester.id, "name": vi(semester.name)} for semester in semesters],
             "selected_semester_id": selected_semester.id,
             "selected_semester_name": vi(selected_semester.name),
-            "timeline": timeline_from_submission(selected_semester, submission.status),
-            "outside_window": is_outside_score_window(current_user, target_student, selected_semester),
-            "submission_status": submission.status,
-            "submission_status_label": SUBMISSION_LABELS.get(submission.status, submission.status),
+            "timeline": timeline_from_submission(selected_semester, submission_status or "draft"),
+            "outside_window": is_outside_score_window(current_user, target_student, selected_semester) if target_is_student else False,
+            "submission_status": submission_status,
+            "submission_status_label": submission_status_label,
             "score_rows": score_rows,
-            "score_total": format_points(submission.self_total),
-            "score_effective_total": format_points(effective_conduct_total(submission)),
-            "score_total_class": format_points(submission.class_total),
-            "score_total_advisor": format_points(submission.advisor_total),
-            "conduct_grade_label": conduct_grade_label(effective_conduct_total(submission)),
-            "student_note": submission.student_note,
-            "class_note": submission.class_note,
-            "advisor_note": submission.advisor_note,
+            "score_total": score_total,
+            "score_effective_total": score_effective_total,
+            "score_total_class": score_total_class,
+            "score_total_advisor": score_total_advisor,
+            "conduct_grade_label": conduct_label,
+            "student_note": submission.student_note if submission else "",
+            "class_note": submission.class_note if submission else "",
+            "advisor_note": submission.advisor_note if submission else "",
             "can_edit_student_note": note_perms["student_note_editable"],
             "can_edit_class_note": note_perms["class_note_editable"],
             "can_edit_advisor_note": note_perms["advisor_note_editable"],
@@ -2814,7 +2633,8 @@ def build_snapshot(
             "evidence_rows": evidence_rows,
             "has_evidence_rows": bool(evidence_rows),
             "evidence_count": str(len(evidence_rows)),
-            "can_create_evidence": semester_evaluation_calendar_open(selected_semester)
+            "can_create_evidence": target_is_student
+            and semester_evaluation_calendar_open(selected_semester)
             and (
                 current_user.role == UserRole.ADMIN
                 or (
@@ -2823,9 +2643,12 @@ def build_snapshot(
                     and current_window_index(selected_semester) == 0
                 )
             ),
-            "can_download_conduct_pdf": current_user.role == UserRole.ADMIN
-            or current_user.id == target_student.id
-            or can_manage_student(current_user, target_student),
+            "can_download_conduct_pdf": target_is_student
+            and (
+                current_user.role == UserRole.ADMIN
+                or current_user.id == target_student.id
+                or can_manage_student(current_user, target_student)
+            ),
             "selected_semester_is_active": selected_semester.is_active,
             "criterion_choice_labels": [vi(criterion.title) for criterion in auto_event_criteria(session)],
             "criterion_choice_ids": [int(criterion.id) for criterion in auto_event_criteria(session)],
@@ -2880,12 +2703,21 @@ def delete_user_account(current_user_id: int, target_user_id: int) -> None:
     with get_reflex_session() as session:
         current_user = session.get(User, current_user_id)
         target_user = session.get(User, target_user_id)
-        if not current_user or current_user.role != UserRole.ADMIN:
-            raise ValueError("Chỉ admin mới được xóa tài khoản.")
+        if not current_user:
+            raise ValueError("Không tìm thấy tài khoản đang đăng nhập.")
         if not target_user:
             raise ValueError("Không tìm thấy tài khoản cần xóa.")
         if current_user.id == target_user.id:
             raise ValueError("Không thể xóa chính tài khoản đang đăng nhập.")
+        if current_user.role == UserRole.ADMIN:
+            pass
+        elif current_user.role == UserRole.ADVISOR:
+            if target_user.role not in {UserRole.STUDENT, UserRole.CLASS_MONITOR}:
+                raise ValueError("Cố vấn chỉ được xóa tài khoản sinh viên hoặc ban cán sự trong lớp phụ trách.")
+            if (target_user.class_name or "") not in managed_classes_for_user(current_user):
+                raise ValueError("Tài khoản này không thuộc lớp do bạn phụ trách.")
+        else:
+            raise ValueError("Bạn không có quyền xóa tài khoản.")
 
         if target_user.username in SEEDED_USERNAMES:
             deleted_seed_username = target_user.username

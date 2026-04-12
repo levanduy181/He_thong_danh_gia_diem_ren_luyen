@@ -542,17 +542,12 @@ class ConductState(rx.State):
             self.nav_students_open = True
             self._refresh()
             return
-        if tab == "students_gpa" and self.current_user_role != "advisor":
-            self._set_flash("Chỉ cố vấn học tập được nhập GPA.", "error")
-            self.active_tab = "student_info"
-            self._refresh()
-            return
         if tab == "students_score" and self.current_user_role not in {"class_monitor", "advisor"}:
             self._set_flash("Chỉ ban cán sự hoặc cố vấn học tập được mở phiếu điểm của sinh viên.", "error")
             self.active_tab = "student_info"
             self._refresh()
             return
-        if tab in ("students_score", "students_evidence", "students_events", "students_gpa"):
+        if tab in ("students_score", "students_evidence", "students_events"):
             if not self.selected_student_id:
                 entry_label = "Phê duyệt" if self.current_user_role == "class_monitor" else "Danh sách sinh viên"
                 self._set_flash(f"Hãy vào {entry_label} và chọn một sinh viên trước.", "error")
@@ -560,7 +555,7 @@ class ConductState(rx.State):
                 self.nav_students_open = True
                 self._refresh()
                 return
-        if tab in ("students", "students_score_list", "students_evidence_list", "students_events_list", "students_score", "students_evidence", "students_events", "students_gpa"):
+        if tab in ("students", "students_score_list", "students_evidence_list", "students_events_list", "students_score", "students_evidence", "students_events"):
             self.nav_students_open = True
         if tab in {"score", "evidence", "events"} and self.current_user_role in {"student", "class_monitor"}:
             self.selected_student_id = self.selected_account_id
@@ -590,14 +585,6 @@ class ConductState(rx.State):
             self.nav_students_open = True
         else:
             self._set_flash("Vai trò hiện tại không được mở phiếu điểm của sinh viên khác.", "error")
-
-    def pick_student_open_gpa(self, label: str) -> None:
-        self.select_student_by_label(label)
-        if self.current_user_role == "advisor":
-            self.active_tab = "students_gpa"
-            self.nav_students_open = True
-        else:
-            self._set_flash("Chỉ cố vấn học tập được nhập GPA.", "error")
 
     def pick_student_open_evidence(self, label: str) -> None:
         self.select_student_by_label(label)
@@ -1224,6 +1211,14 @@ class ConductState(rx.State):
         )
 
     @rx.var
+    def can_edit_student_gpa(self) -> bool:
+        return (
+            self.current_user_role == "advisor"
+            and self.active_tab == "student_detail"
+            and int(self.selected_student_id or 0) != 0
+        )
+
+    @rx.var
     def evidence_grid_columns(self) -> str:
         parts = ["64px"]
         if self.show_student_code_col:
@@ -1299,12 +1294,11 @@ class ConductState(rx.State):
             "students_score",
             "students_evidence",
             "students_events",
-            "students_gpa",
         }
 
     @rx.var
     def grading_target_banner_text(self) -> str:
-        if self.active_tab not in {"students_score", "students_evidence", "students_events", "students_gpa"}:
+        if self.active_tab not in {"students_score", "students_evidence", "students_events"}:
             return ""
         if self.current_user_role not in {"class_monitor", "advisor"}:
             return ""
