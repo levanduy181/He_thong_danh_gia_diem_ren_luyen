@@ -129,15 +129,3 @@ Lưu ý: đây là dữ liệu demo cho bài tập, mật khẩu đang được 
 - `uploaded_files/`
   - thư mục runtime cho upload.
 
-## Dọn repo
-
-Đã dọn các artefact/runtime không cần thiết trong workspace:
-
-- `__pycache__/`
-- `.states/`
-- `ptit_reflex/**/__pycache__/`
-- `err.log`
-- `out.log`
-- `data/reflex_student_conduct_readable.md`
-
-Các mục runtime này cũng đã được bổ sung vào `.gitignore` nếu phù hợp.
