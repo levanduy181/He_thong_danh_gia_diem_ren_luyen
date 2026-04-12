@@ -11,7 +11,11 @@ def hash_password(password: str) -> str:
     return f"{salt}${digest.hex()}"
 
 
-def verify_password(password: str, password_hash: str) -> bool:
+def verify_password(password: str, password_hash: str | None) -> bool:
+    if not password_hash:
+        return False
+    if "$" not in password_hash:
+        return hmac.compare_digest(password, password_hash)
     try:
         salt, expected = password_hash.split("$", 1)
     except ValueError:

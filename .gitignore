@@ -1,6 +1,11 @@
 __pycache__/
 *.py[cod]
 .venv/
-.nicegui/
+.web/
+.states/
 data/*.db
+data/*.db-journal
 data/*.backup
+uploaded_files/
+*.log
+assets/external/

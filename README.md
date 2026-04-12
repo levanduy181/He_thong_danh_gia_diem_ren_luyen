@@ -1,32 +1,40 @@
 # PTIT Conduct Evaluation
 
-Ung dung web danh gia diem ren luyen sinh vien PTIT, trong do frontend, backend va database deu duoc xay dung bang Python.
+Ứng dụng web đánh giá điểm rèn luyện sinh viên PTIT, trong đó frontend, backend và dữ liệu đều chạy bằng Python với Reflex.
 
-## Cong nghe
+## Công nghệ
 
-- NiceGUI + FastAPI
+- Reflex
 - SQLAlchemy + SQLite
-- PBKDF2-HMAC SHA256 cho mat khau
+- fpdf2
 
-## Chuc nang
+## Chức năng chính
 
-- Dang nhap theo vai tro quan tri, co van, sinh vien
-- Quan ly hoc ky, sinh vien, bo tieu chi
-- Sinh vien tu danh gia va nop phieu
-- Co van duyet tung tieu chi
-- API demo `/api/health`, `/api/semesters`, `/api/submissions/{id}`
+- Đăng nhập theo vai trò `admin`, `cố vấn học tập`, `ban cán sự`, `sinh viên`
+- Sinh viên khai báo minh chứng, theo dõi sự kiện đã tham gia và tự điền phiếu điểm rèn luyện
+- Ban cán sự duyệt minh chứng của lớp và duyệt phiếu điểm rèn luyện của sinh viên
+- Cố vấn học tập xác nhận phiếu điểm rèn luyện
+- Có mốc thời gian đánh giá theo từng học kỳ
+- Có API demo: `/api/health`, `/api/semesters`, `/api/dashboard`, `/api/submissions/{id}`
 
-## Chay du an
+## Chạy dự án
 
 ```bash
 pip install -r requirements.txt
-python -m app.main
+python main.py
 ```
 
-Mo tai `http://127.0.0.1:8080`
+Mở tại `http://127.0.0.1:3000`
 
-## Tai khoan demo
+## Dữ liệu
+
+- CSDL demo được tạo tại `data/reflex_student_conduct.db`
+- Tệp upload được phục vụ qua route `/_upload/...`
+
+## Tài khoản demo
 
 - `admin / admin123`
 - `covan / covan123`
+- `bancansu / bcs123`
 - `b23dccn001 / student123`
+- `b23dccn002 / student123`
