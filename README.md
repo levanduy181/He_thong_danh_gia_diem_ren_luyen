@@ -13,8 +13,8 @@ Không nên dùng `Python 3.14` vì `Reflex` vẫn còn cảnh báo tương thí
 ## Clone và chạy nhanh
 
 ```powershell
-git clone <repo-url>
-cd python--btl
+git clone [<repo-url>](https://github.com/levanduy181/python.git)
+cd python
 powershell -ExecutionPolicy Bypass -File .\setup_and_run.ps1
 ```
 
