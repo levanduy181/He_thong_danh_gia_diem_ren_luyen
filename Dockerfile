@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm && n
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
-RUN mkdir -p /app/data /app/uploaded_files && chmod +x /app/docker-entrypoint.sh
+RUN mkdir -p /app/data /app/uploaded_files && sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
 EXPOSE 3000
 EXPOSE 8000
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["sh", "/app/docker-entrypoint.sh"]
