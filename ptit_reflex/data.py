@@ -324,31 +324,6 @@ CLASS_MONITOR_USERNAMES = {
     if config.get("class_monitor_username")
 }
 STUDENT_LIKE_ROLES = [UserRole.STUDENT, UserRole.CLASS_MONITOR]
-REGISTER_FACULTY_OPTIONS = [
-    "An toàn thông tin",
-    "Công nghệ thông tin",
-    "Điện tử viễn thông",
-    "Truyền thông đa phương tiện",
-]
-REGISTER_MAJOR_OPTIONS_BY_FACULTY = {
-    "An toàn thông tin": [
-        "An toàn thông tin",
-        "Công nghệ thông tin",
-    ],
-    "Công nghệ thông tin": [
-        "Công nghệ thông tin",
-        "Kỹ thuật phần mềm",
-        "Hệ thống thông tin",
-    ],
-    "Điện tử viễn thông": [
-        "Điện tử viễn thông",
-        "Internet vạn vật",
-    ],
-    "Truyền thông đa phương tiện": [
-        "Công nghệ đa phương tiện",
-        "Thiết kế và phát triển game",
-    ],
-}
 REGISTER_GENDER_OPTIONS = ["Nam", "Nữ", "Khác"]
 ROLE_MANAGEMENT_SYSTEM_GROUP_LABEL = "Tài khoản hệ thống"
 ROLE_MANAGEMENT_ROLE_ORDER = {
@@ -1097,97 +1072,6 @@ def ensure_user(
     session.add(user)
     session.flush()
     return user
-
-
-def register_user_account(
-    username: str,
-    password: str,
-    full_name: str,
-    student_code: str,
-    email: str,
-    class_name: str,
-    faculty: str | None = None,
-    major: str | None = None,
-    phone: str | None = None,
-    birth_date: str | None = None,
-    gender: str | None = None,
-    address: str | None = None,
-) -> dict[str, str | int]:
-    ensure_reflex_demo_data()
-    username = (username or "").strip()
-    password = (password or "").strip()
-    full_name = (full_name or "").strip()
-    student_code = (student_code or "").strip()
-    email = (email or "").strip().lower()
-    class_name = (class_name or "").strip()
-    resolved_faculty = _clean_optional(faculty)
-    resolved_major = _clean_optional(major)
-    resolved_phone = _clean_optional(phone)
-    resolved_gender = _clean_optional(gender)
-    resolved_address = _clean_optional(address)
-    normalized_birth_date = normalize_birth_date_input(birth_date)
-    if not username:
-        raise ValueError("Tên đăng nhập không được để trống.")
-    if not password:
-        raise ValueError("Mật khẩu không được để trống.")
-    if not full_name:
-        raise ValueError("Họ tên không được để trống.")
-    if not student_code:
-        raise ValueError("Mã sinh viên không được để trống.")
-    if not email:
-        raise ValueError("Email không được để trống.")
-    if not class_name:
-        raise ValueError("Lớp không được để trống.")
-    if not resolved_faculty:
-        raise ValueError("Hãy chọn khoa.")
-    if resolved_faculty not in REGISTER_FACULTY_OPTIONS:
-        raise ValueError("Khoa được chọn không hợp lệ.")
-    allowed_majors = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(resolved_faculty, [])
-    if not resolved_major:
-        raise ValueError("Hãy chọn ngành.")
-    if allowed_majors and resolved_major not in allowed_majors:
-        raise ValueError("Ngành được chọn không hợp lệ.")
-    if not resolved_phone:
-        raise ValueError("Số điện thoại không được để trống.")
-    if not normalized_birth_date:
-        raise ValueError("Ngày sinh không được để trống.")
-    if not resolved_gender:
-        raise ValueError("Hãy chọn giới tính.")
-    if resolved_gender not in REGISTER_GENDER_OPTIONS:
-        raise ValueError("Giới tính được chọn không hợp lệ.")
-    if not resolved_address:
-        raise ValueError("Địa chỉ không được để trống.")
-
-    with get_reflex_session() as session:
-        if session.scalar(select(User).where(User.username == username)):
-            raise ValueError("Tên đăng nhập đã tồn tại.")
-        if session.scalar(select(User).where(User.student_code == student_code)):
-            raise ValueError("Mã sinh viên đã tồn tại.")
-        if session.scalar(select(User).where(User.email == email)):
-            raise ValueError("Email đã tồn tại.")
-        user = User(
-            username=username,
-            password_hash=_store_password_plain(password),
-            full_name=full_name,
-            role=UserRole.STUDENT,
-            student_code=student_code,
-            email=email,
-            class_name=class_name,
-            faculty=resolved_faculty,
-            major=resolved_major,
-            phone=resolved_phone,
-            birth_date=normalized_birth_date,
-            gender=resolved_gender,
-            address=resolved_address,
-        )
-        session.add(user)
-        session.flush()
-        return {
-            "id": user.id,
-            "username": user.username,
-            "role": user.role.value,
-            "role_label": role_label(user.role.value),
-        }
 
 
 def update_user_profile(

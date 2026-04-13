@@ -6,9 +6,7 @@ import reflex as rx
 
 from ptit_reflex.data import (
     CATEGORY_LABELS,
-    REGISTER_FACULTY_OPTIONS,
     REGISTER_GENDER_OPTIONS,
-    REGISTER_MAJOR_OPTIONS_BY_FACULTY,
     ROLE_LABELS,
     approve_registered_event,
     authenticate_user,
@@ -19,7 +17,6 @@ from ptit_reflex.data import (
     delete_evidence,
     export_conduct_pdf_bytes,
     load_evidence_detail,
-    register_user_account,
     register_event_for_student,
     review_evidence,
     save_student_gpa,
@@ -41,23 +38,9 @@ class ConductState(rx.State):
     flash_kind: str = "info"
     flash_token: int = 0
     is_authenticated: bool = False
-    auth_mode: str = "login"
     login_username: str = ""
     login_password: str = ""
     login_error: str = ""
-    register_username: str = ""
-    register_password: str = ""
-    register_password_confirm: str = ""
-    register_full_name: str = ""
-    register_student_code: str = ""
-    register_email: str = ""
-    register_class_name: str = ""
-    register_faculty: str = ""
-    register_major: str = ""
-    register_phone: str = ""
-    register_birth_date: str = ""
-    register_gender: str = ""
-    register_address: str = ""
 
     active_tab: str = "student_info"
     event_tab: str = "joined"
@@ -354,75 +337,6 @@ class ConductState(rx.State):
     def set_login_password(self, value: str) -> None:
         self.login_password = value
 
-    def show_login_form(self) -> None:
-        self.auth_mode = "login"
-        self.login_error = ""
-        self.flash_message = ""
-
-    def show_register_form(self) -> None:
-        self.auth_mode = "register"
-        self.login_error = ""
-        self.flash_message = ""
-        if not self.register_faculty:
-            self.register_faculty = REGISTER_FACULTY_OPTIONS[0]
-        if self.register_major not in REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, []):
-            self.register_major = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, [""])[0]
-        if not self.register_gender:
-            self.register_gender = REGISTER_GENDER_OPTIONS[0]
-
-    def set_register_field(self, field_name: str, value: str) -> None:
-        setattr(self, field_name, value)
-
-    def set_register_faculty(self, value: str) -> None:
-        self.register_faculty = value
-        majors = REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(value, [])
-        if self.register_major not in majors:
-            self.register_major = majors[0] if majors else ""
-
-    def reset_register_form(self) -> None:
-        self.register_username = ""
-        self.register_password = ""
-        self.register_password_confirm = ""
-        self.register_full_name = ""
-        self.register_student_code = ""
-        self.register_email = ""
-        self.register_class_name = ""
-        self.register_faculty = REGISTER_FACULTY_OPTIONS[0]
-        self.register_major = REGISTER_MAJOR_OPTIONS_BY_FACULTY[self.register_faculty][0]
-        self.register_phone = ""
-        self.register_birth_date = ""
-        self.register_gender = REGISTER_GENDER_OPTIONS[0]
-        self.register_address = ""
-
-    def register_account(self) -> None:
-        if self.register_password != self.register_password_confirm:
-            self._set_flash("Mật khẩu xác nhận không khớp.", "error")
-            return
-        try:
-            account = register_user_account(
-                username=self.register_username,
-                password=self.register_password,
-                full_name=self.register_full_name,
-                student_code=self.register_student_code,
-                email=self.register_email,
-                class_name=self.register_class_name,
-                faculty=self.register_faculty,
-                major=self.register_major,
-                phone=self.register_phone,
-                birth_date=self.register_birth_date,
-                gender=self.register_gender,
-                address=self.register_address,
-            )
-        except ValueError as exc:
-            self._set_flash(str(exc), "error")
-            return
-        self.login_username = str(account["username"])
-        self.login_password = ""
-        self.auth_mode = "login"
-        self.login_error = ""
-        self.reset_register_form()
-        self._set_flash("Đăng ký thành công. Tài khoản mới mặc định có quyền Sinh viên.", "success")
-
     def login(self) -> None:
         try:
             auth = authenticate_user(
@@ -436,7 +350,6 @@ class ConductState(rx.State):
             return
         self.login_error = ""
         self.is_authenticated = True
-        self.auth_mode = "login"
         self.loading = True
         self.selected_account_id = int(auth["id"])
         self.selected_student_id = 0
@@ -461,7 +374,6 @@ class ConductState(rx.State):
         self._clear_pending_evidence_upload(delete_file=True)
         self.is_authenticated = False
         self.loading = False
-        self.auth_mode = "login"
         self.selected_account_id = 0
         self.selected_student_id = 0
         self.selected_semester_id = 0
@@ -492,7 +404,6 @@ class ConductState(rx.State):
         self.flash_message = ""
         self.flash_kind = "info"
         self.login_error = ""
-        self.reset_register_form()
         self.login_password = ""
         self.nav_students_open = True
 
@@ -1197,14 +1108,6 @@ class ConductState(rx.State):
     @rx.var
     def semester_names(self) -> list[str]:
         return [str(item["name"]) for item in self.semesters]
-
-    @rx.var
-    def register_faculty_options(self) -> list[str]:
-        return list(REGISTER_FACULTY_OPTIONS)
-
-    @rx.var
-    def register_major_options(self) -> list[str]:
-        return list(REGISTER_MAJOR_OPTIONS_BY_FACULTY.get(self.register_faculty, []))
 
     @rx.var
     def register_gender_options(self) -> list[str]:

@@ -4,6 +4,22 @@
 
 ## Yêu cầu
 
+### Cách dễ nhất cho người mới
+
+- `Docker Desktop`
+
+Chỉ cần cài Docker rồi chạy:
+
+```powershell
+git clone https://github.com/levanduy181/python.git
+cd python
+docker compose up --build
+```
+
+Sau khi container lên xong, mở `http://localhost:3000`.
+
+### Cách chạy local không dùng Docker
+
 - `Git`
 - `Python 3.12` hoặc `Python 3.13`
 - `Node.js LTS`
@@ -30,6 +46,25 @@ Script `setup_and_run.ps1` sẽ tự:
 Script sẽ tự thử lần lượt `py -3.13`, `py -3.12`, `py -3`, rồi `python`. Nếu vẫn không tạo được `.venv` thì máy đó chưa có Python dùng được.
 
 Sau khi chạy, mở `http://localhost:3000`.
+
+## Chạy bằng Docker
+
+```powershell
+git clone https://github.com/levanduy181/python.git
+cd python
+docker compose up --build
+```
+
+Khi cần dừng:
+
+```powershell
+docker compose down
+```
+
+Docker sẽ tự giữ dữ liệu trong:
+
+- `./data`
+- `./uploaded_files`
 
 ## Chạy thủ công
 
@@ -100,6 +135,15 @@ mkdir data
 
 Cài `Node.js LTS`, mở terminal mới rồi chạy lại app.
 
+### Docker build lỗi
+
+Nếu build bị lỗi do cache hoặc package frontend, chạy lại:
+
+```powershell
+docker compose build --no-cache
+docker compose up
+```
+
 ### Script báo không tạo được `.venv`
 
 Máy đó chưa có Python chạy được từ terminal. Hãy cài `Python 3.12` hoặc `Python 3.13`, mở terminal mới, rồi chạy lại:
@@ -142,6 +186,8 @@ Không cần activate `.venv`. Chạy trực tiếp:
 ## Cấu trúc chính
 
 - `main.py`: launcher chạy `Reflex`
+- `Dockerfile`: image chạy app bằng Docker
+- `docker-compose.yml`: chạy app bằng `docker compose`
 - `setup_and_run.ps1`: script cài và chạy một lệnh cho Windows
 - `requirements.txt`: thư viện Python
 - `rxconfig.py`: cấu hình `Reflex`
