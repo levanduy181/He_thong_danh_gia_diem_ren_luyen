@@ -2,38 +2,40 @@
 
 Hệ thống đánh giá điểm rèn luyện dành cho sinh viên PTIT.
 
-Ứng dụng hỗ trợ các vai trò:
+Ứng dụng có 4 vai trò chính:
 - `Sinh viên`: khai báo điểm rèn luyện, minh chứng, đăng ký sự kiện
 - `Ban cán sự`: phê duyệt minh chứng, sự kiện, phiếu điểm của lớp
 - `Cố vấn học tập`: xem và xác nhận phiếu điểm rèn luyện
-- `Admin`: quản lý tài khoản, cấu hình mốc thời gian, tạo sự kiện
+- `Admin`: quản lý tài khoản, mốc thời gian và sự kiện
 
-Hệ thống được viết bằng `Reflex`, lưu dữ liệu bằng `SQLite` và chạy bằng `Docker`.
+Hệ thống được viết bằng `Reflex`, lưu dữ liệu bằng `SQLite`.
 
-## Cách chạy
+## Deploy lên Reflex Cloud
 
 Yêu cầu:
-- `Docker Desktop`
+- `Python 3.12` hoặc `Python 3.13`
 
-Chạy ứng dụng:
+Chạy các lệnh sau:
 
 ```powershell
 git clone https://github.com/levanduy181/He_thong_danh_gia_diem_ren_luyen.git
 cd He_thong_danh_gia_diem_ren_luyen
-docker compose up --build
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m reflex login
+.\.venv\Scripts\python.exe -m reflex deploy --config cloud.yml
 ```
 
-Sau khi chạy xong, mở:
+Sau khi deploy xong, Reflex Cloud sẽ trả về đường dẫn public để mở trên internet.
 
-```text
-http://localhost:3000
-```
+## Cấu hình deploy
 
-Dừng ứng dụng:
+Repo đã có sẵn file `cloud.yml`:
+- app name: `he-thong-danh-gia-diem-ren-luyen`
+- region: `sin` (Singapore)
+- vm type: `c1m1`
 
-```powershell
-docker compose down
-```
+Nếu bạn muốn đổi tên app hoặc đổi region, sửa trực tiếp file `cloud.yml`.
 
 ## Tài khoản mẫu
 
@@ -45,15 +47,15 @@ docker compose down
 
 Tài khoản sinh viên và ban cán sự dùng mật khẩu đúng bằng mã sinh viên.
 
-## Dữ liệu có sẵn
+## Lưu ý quan trọng
 
-- `4` lớp mẫu
-- `12` tài khoản phía sinh viên
-- `48` phiếu điểm rèn luyện lịch sử
-- `6` sự kiện mẫu
+- Deploy kiểu này phù hợp để demo nhanh trên internet.
+- Theo tài liệu chính thức của Reflex, nếu dùng `include_db` với SQLite local thì dữ liệu đó không persistent và có thể mất khi app restart. Hiện file `cloud.yml` không mang DB local lên cloud.
+- Theo tài liệu upload của Reflex, thư mục upload trên Reflex hosting không persistent và sẽ bị xóa khi redeploy. Nếu muốn giữ file minh chứng lâu dài, nên chuyển sang dịch vụ lưu file ngoài như S3.
 
-## Lưu ý
+## Tài liệu chính thức
 
-- Lần chạy đầu có thể chậm hơn vì Docker cần build image và khởi tạo frontend.
-- Nếu Docker chưa mở, hãy mở `Docker Desktop` trước rồi chạy lại.
-- Nếu cổng `3000` đang bận, hãy tắt ứng dụng đang dùng cổng đó rồi chạy lại.
+- [Reflex Cloud Quick Start](https://reflex.dev/docs/hosting/deploy-quick-start/)
+- [reflex deploy](https://reflex.dev/docs/hosting/cli/deploy/)
+- [cloud.yml config](https://reflex.dev/docs/hosting/config-file/)
+- [upload persistence trên Reflex hosting](https://reflex.dev/docs/library/forms/upload/)

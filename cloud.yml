@@ -1,0 +1,6 @@
+name: he-thong-danh-gia-diem-ren-luyen
+description: He thong danh gia diem ren luyen PTIT
+regions:
+  sin: 1
+vmtype: c1m1
+strategy: immediate

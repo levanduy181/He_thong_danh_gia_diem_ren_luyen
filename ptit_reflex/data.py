@@ -847,7 +847,7 @@ def ensure_data_dir_exists() -> None:
         return
     if DATA_DIR.exists():
         raise NotADirectoryError(f"Đường dẫn dữ liệu không phải thư mục: {DATA_DIR}")
-    raise FileNotFoundError(f"Không tìm thấy thư mục dữ liệu: {DATA_DIR}. Hãy tự tạo thư mục 'data' trước khi chạy ứng dụng.")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def save_suppressed_seed_usernames(usernames: set[str]) -> None:
