@@ -1,7 +1,6 @@
 services:
   app:
     build: .
-    container_name: ptit-conduct-app
     ports:
       - "3000:3000"
       - "8000:8000"
