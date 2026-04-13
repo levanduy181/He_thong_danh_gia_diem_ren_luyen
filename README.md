@@ -4,8 +4,6 @@
 
 ## Yêu cầu
 
-### Cách dễ nhất cho người mới
-
 - `Docker Desktop`
 
 Chỉ cần cài Docker rồi chạy:
@@ -17,35 +15,6 @@ docker compose up --build
 ```
 
 Sau khi container lên xong, mở `http://localhost:3000`.
-
-### Cách chạy local không dùng Docker
-
-- `Git`
-- `Python 3.12` hoặc `Python 3.13`
-- `Node.js LTS`
-
-Không nên dùng `Python 3.14` vì `Reflex` vẫn còn cảnh báo tương thích.
-
-## Clone và chạy nhanh
-
-```powershell
-git clone https://github.com/levanduy181/python.git
-cd python
-powershell -ExecutionPolicy Bypass -File .\setup_and_run.ps1
-```
-
-Script `setup_and_run.ps1` sẽ tự:
-
-- tạo `.venv`
-- cài `requirements.txt`
-- tạo thư mục `data`
-- compile app để sinh `.web`
-- cài `tslib` trong `.web` nếu thiếu
-- chạy ứng dụng
-
-Script sẽ tự thử lần lượt `py -3.13`, `py -3.12`, `py -3`, rồi `python`. Nếu vẫn không tạo được `.venv` thì máy đó chưa có Python dùng được.
-
-Sau khi chạy, mở `http://localhost:3000`.
 
 ## Chạy bằng Docker
 
@@ -66,17 +35,7 @@ Docker sẽ tự giữ dữ liệu trong:
 - `./data`
 - `./uploaded_files`
 
-## Chạy thủ công
-
-```powershell
-py -3.13 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-mkdir data
-.\.venv\Scripts\python.exe main.py
-```
-
-Nếu máy không có `py`, có thể thay bằng `python`.
+Lần chạy Docker đầu tiên có thể chậm hơn một chút vì container sẽ tự khởi tạo `.web` và cài `tslib`.
 
 ## Tài khoản mẫu
 
@@ -112,28 +71,20 @@ Các sự kiện mặc định:
 ## Reset dữ liệu
 
 ```powershell
+docker compose down
 Remove-Item data\reflex_student_conduct.db -Force
-.\.venv\Scripts\python.exe main.py
+docker compose up --build
 ```
 
 Nếu muốn xóa luôn file upload runtime:
 
 ```powershell
+docker compose down
 Remove-Item uploaded_files -Recurse -Force
+docker compose up --build
 ```
 
 ## Lỗi thường gặp
-
-### Thiếu thư mục `data`
-
-```powershell
-mkdir data
-.\.venv\Scripts\python.exe main.py
-```
-
-### Thiếu `npm`
-
-Cài `Node.js LTS`, mở terminal mới rồi chạy lại app.
 
 ### Docker build lỗi
 
@@ -144,51 +95,31 @@ docker compose build --no-cache
 docker compose up
 ```
 
-### Script báo không tạo được `.venv`
+### Docker Desktop chưa chạy
 
-Máy đó chưa có Python chạy được từ terminal. Hãy cài `Python 3.12` hoặc `Python 3.13`, mở terminal mới, rồi chạy lại:
+Mở `Docker Desktop`, chờ Docker khởi động xong rồi chạy lại:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_and_run.ps1
+docker compose up --build
 ```
 
-### Thiếu `fpdf2`
+### Cổng `3000` hoặc `8000` đang bị dùng
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+docker compose down
 ```
 
-### Lỗi `Cannot find module 'tslib'`
+Sau đó tắt ứng dụng khác đang chiếm cổng rồi chạy lại:
 
 ```powershell
-Remove-Item .web -Recurse -Force
-.\.venv\Scripts\python.exe main.py
-```
-
-Nếu lỗi vẫn còn, dừng app rồi chạy:
-
-```powershell
-cd .web
-npm install tslib --no-save --legacy-peer-deps
-cd ..
-.\.venv\Scripts\python.exe main.py
-```
-
-### PowerShell chặn `Activate.ps1`
-
-Không cần activate `.venv`. Chạy trực tiếp:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+docker compose up --build
 ```
 
 ## Cấu trúc chính
 
-- `main.py`: launcher chạy `Reflex`
 - `Dockerfile`: image chạy app bằng Docker
 - `docker-compose.yml`: chạy app bằng `docker compose`
-- `setup_and_run.ps1`: script cài và chạy một lệnh cho Windows
+- `docker-entrypoint.sh`: khởi tạo `.web`, cài `tslib` nếu thiếu rồi chạy app
 - `requirements.txt`: thư viện Python
 - `rxconfig.py`: cấu hình `Reflex`
 - `ptit_reflex/data.py`: seed, query, phân quyền, phiếu điểm, minh chứng, sự kiện
@@ -201,5 +132,4 @@ Không cần activate `.venv`. Chạy trực tiếp:
 Không nên sửa tay:
 
 - `.web/`
-- `.venv/`
 - `uploaded_files/`
