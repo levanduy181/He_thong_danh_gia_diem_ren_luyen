@@ -40,8 +40,8 @@ docker compose down
 - `admin / admin123`
 - `CVHT001 / CVHT001`
 - `CVHT002 / CVHT002`
-- `CVHT003 / CVHT003`
-- `CVHT004 / CVHT004`
+- `B23DCAT001 / B23DCAT001`
+- `B23DCAT002 / B23DCAT002`
 
 Tài khoản sinh viên và ban cán sự dùng mật khẩu đúng bằng mã sinh viên.
 
